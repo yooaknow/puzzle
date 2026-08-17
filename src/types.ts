@@ -1,4 +1,5 @@
 export const SHARE_PUZZLE_KEY = 'puzzlw:sharedPuzzleUri';
+export const SHARE_PUZZLE_PREFIX = 'puzzlw:sharedPuzzleUri:';
 
 export const DESIGN_WIDTH = 390;
 export const DESIGN_HEIGHT = 844;

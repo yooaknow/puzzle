@@ -1,4 +1,13 @@
-import { SHARE_PUZZLE_KEY, DrawStroke, GridSize, WebCanvasContext, WebCanvasDocument, WebImageConstructor, WebStorage } from './types';
+import {
+  SHARE_PUZZLE_KEY,
+  SHARE_PUZZLE_PREFIX,
+  DrawStroke,
+  GridSize,
+  WebCanvasContext,
+  WebCanvasDocument,
+  WebImageConstructor,
+  WebStorage,
+} from './types';
 import { solveSamplePieces } from './assets';
 
 export function createPuzzleImage(photoUri: string, gridSize: GridSize): Promise<string> {
@@ -138,11 +147,15 @@ export function createDrawingOverlay(strokes: DrawStroke[]) {
   return canvas.toDataURL('image/png');
 }
 
-export function getShareUrl() {
+export function createSharedPuzzleId() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export function getShareUrl(puzzleId?: string) {
   const webLocation = (globalThis as unknown as { location?: { href?: string } }).location;
   const currentUrl = webLocation?.href ?? 'https://puzzlw.app';
   const baseUrl = currentUrl.split('?')[0].split('#')[0];
-  return `${baseUrl}?shared=1`;
+  return puzzleId ? `${baseUrl}?shared=1&puzzleId=${encodeURIComponent(puzzleId)}` : `${baseUrl}?shared=1`;
 }
 
 export function isSharedLink() {
@@ -150,17 +163,32 @@ export function isSharedLink() {
   return webLocation?.search?.includes('shared=1') ?? false;
 }
 
-export function saveStoredPuzzleUri(puzzleUri: string) {
+export function getSharedPuzzleId() {
+  const webLocation = (globalThis as unknown as { location?: { search?: string } }).location;
+  const search = webLocation?.search ?? '';
+  const match = search.match(/[?&]puzzleId=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
+}
+
+export function saveStoredPuzzleUri(puzzleUri: string, puzzleId?: string) {
   try {
-    getStorage()?.setItem(SHARE_PUZZLE_KEY, puzzleUri);
+    const storage = getStorage();
+    storage?.setItem(SHARE_PUZZLE_KEY, puzzleUri);
+    if (puzzleId) {
+      storage?.setItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`, puzzleUri);
+    }
   } catch {
     // Local storage can fail for large data URLs; sharing still falls back to the sample puzzle.
   }
 }
 
-export function getStoredPuzzleUri() {
+export function getStoredPuzzleUri(puzzleId?: string | null) {
   try {
-    return getStorage()?.getItem(SHARE_PUZZLE_KEY) ?? null;
+    const storage = getStorage();
+    if (puzzleId) {
+      return storage?.getItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`) ?? storage?.getItem(SHARE_PUZZLE_KEY) ?? null;
+    }
+    return storage?.getItem(SHARE_PUZZLE_KEY) ?? null;
   } catch {
     return null;
   }

@@ -59,7 +59,9 @@ import {
   createDrawingOverlay,
   createPuzzleImage,
   createPuzzlePieces,
+  createSharedPuzzleId,
   getShareUrl,
+  getSharedPuzzleId,
   getStoredPuzzleUri,
   isSharedLink,
   saveStoredPuzzleUri,
@@ -170,9 +172,7 @@ export default function App() {
         {screen === 'complete' && completedPuzzleUri && (
           <PuzzleCompleteScreen puzzleUri={completedPuzzleUri} strokes={completedStrokes} textStickers={completedTextStickers} onBack={goBack} />
         )}
-        {screen === 'solve' && (
-          <PuzzleSolveScreen puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri() ?? solveSamplePuzzle} onBack={goBack} />
-        )}
+        {screen === 'solve' && <PuzzleSolveScreen puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle} onBack={goBack} />}
       </View>
     </SafeAreaView>
   );
@@ -561,11 +561,12 @@ function PuzzleCompleteScreen({
   onBack: () => void;
 }) {
   const drawingOverlayUri = useMemo(() => createDrawingOverlay(strokes), [strokes]);
-  const shareUrl = getShareUrl();
+  const sharePuzzleId = useMemo(() => createSharedPuzzleId(), []);
+  const shareUrl = useMemo(() => getShareUrl(sharePuzzleId), [sharePuzzleId]);
 
   useEffect(() => {
-    saveStoredPuzzleUri(puzzleUri);
-  }, [puzzleUri]);
+    saveStoredPuzzleUri(puzzleUri, sharePuzzleId);
+  }, [puzzleUri, sharePuzzleId]);
 
   const sharePuzzle = async () => {
     const title = '퍼즐이 완성됐어요!';
