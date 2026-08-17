@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   GestureResponderEvent,
@@ -7,7 +7,6 @@ import {
   ImageStyle,
   Pressable,
   SafeAreaView,
-  ScrollView,
   Share,
   StyleProp,
   StyleSheet,
@@ -677,9 +676,13 @@ function PuzzleSolveScreen({
   const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(9).fill(null));
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
   const [draggingPiece, setDraggingPiece] = useState<{ pieceIndex: number; x: number; y: number } | null>(null);
+  const draggingPieceRef = useRef<{ pieceIndex: number; x: number; y: number } | null>(null);
+  const [trayPage, setTrayPage] = useState(0);
   const placedCount = placedPieces.filter((piece) => piece !== null).length;
   const isSolved = placedCount === 9;
   const availablePieces = pieceUris.map((_, index) => index).filter((index) => !placedPieces.includes(index));
+  const trayPageCount = Math.max(1, Math.ceil(availablePieces.length / 2));
+  const visiblePieces = availablePieces.slice(trayPage * 2, trayPage * 2 + 2);
 
   useEffect(() => {
     let isMounted = true;
@@ -689,6 +692,8 @@ function PuzzleSolveScreen({
         setPlacedPieces(Array(9).fill(null));
         setSelectedPiece(null);
         setDraggingPiece(null);
+        draggingPieceRef.current = null;
+        setTrayPage(0);
       }
     });
 
@@ -696,6 +701,10 @@ function PuzzleSolveScreen({
       isMounted = false;
     };
   }, [puzzleUri]);
+
+  useEffect(() => {
+    setTrayPage((current) => Math.min(current, trayPageCount - 1));
+  }, [trayPageCount]);
 
   const getDesignPoint = (event: GestureResponderEvent) => {
     const { pageX, pageY } = event.nativeEvent;
@@ -723,37 +732,43 @@ function PuzzleSolveScreen({
 
   const startDraggingPiece = (pieceIndex: number, event: GestureResponderEvent) => {
     const point = getDesignPoint(event);
+    const nextDraggingPiece = { pieceIndex, x: point.x, y: point.y };
     setSelectedPiece(pieceIndex);
-    setDraggingPiece({ pieceIndex, x: point.x, y: point.y });
+    draggingPieceRef.current = nextDraggingPiece;
+    setDraggingPiece(nextDraggingPiece);
   };
 
   const moveDraggingPiece = (event: GestureResponderEvent) => {
-    setDraggingPiece((current) => {
-      if (!current) {
-        return null;
-      }
+    const current = draggingPieceRef.current;
+    if (!current) {
+      return;
+    }
 
-      const point = getDesignPoint(event);
-      return { ...current, x: point.x, y: point.y };
-    });
+    const point = getDesignPoint(event);
+    const nextDraggingPiece = { ...current, x: point.x, y: point.y };
+    draggingPieceRef.current = nextDraggingPiece;
+    setDraggingPiece(nextDraggingPiece);
   };
 
   const finishDraggingPiece = (event: GestureResponderEvent) => {
-    if (!draggingPiece || placedPieces.includes(draggingPiece.pieceIndex)) {
+    const currentDraggingPiece = draggingPieceRef.current;
+    if (!currentDraggingPiece || placedPieces.includes(currentDraggingPiece.pieceIndex)) {
+      draggingPieceRef.current = null;
       setDraggingPiece(null);
       return;
     }
 
     const slotIndex = getDropSlot(event);
-    if (slotIndex === draggingPiece.pieceIndex && placedPieces[slotIndex] === null) {
+    if (slotIndex === currentDraggingPiece.pieceIndex && placedPieces[slotIndex] === null) {
       setPlacedPieces((current) => {
         const next = current.slice();
-        next[slotIndex] = draggingPiece.pieceIndex;
+        next[slotIndex] = currentDraggingPiece.pieceIndex;
         return next;
       });
     }
 
     setSelectedPiece(null);
+    draggingPieceRef.current = null;
     setDraggingPiece(null);
   };
 
@@ -787,32 +802,46 @@ function PuzzleSolveScreen({
       </View>
 
       <View style={styles.solveTray}>
-        <Pressable style={({ pressed }) => [styles.solveArrowLeft, pressed && styles.pressed]}>
+        <Pressable
+          onPress={() => setTrayPage((current) => Math.max(0, current - 1))}
+          disabled={trayPage === 0}
+          style={({ pressed }) => [styles.solveArrowLeft, trayPage === 0 && styles.disabledSolveArrow, pressed && trayPage > 0 && styles.pressed]}
+        >
           <Text style={styles.solveArrowText}>‹</Text>
         </Pressable>
         {isSolved ? (
           <Text style={styles.solveEmptyTrayText}>남은 퍼즐 조각이 없습니다.</Text>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.solvePieceRow}>
-            {availablePieces.map((pieceIndex) => (
-              <Pressable
+          <View style={styles.solvePieceRow}>
+            {visiblePieces.map((pieceIndex) => (
+              <View
                 key={pieceIndex}
                 onStartShouldSetResponder={() => true}
+                onMoveShouldSetResponder={() => true}
                 onResponderGrant={(event) => startDraggingPiece(pieceIndex, event)}
                 onResponderMove={moveDraggingPiece}
                 onResponderRelease={finishDraggingPiece}
                 onResponderTerminate={() => {
                   setSelectedPiece(null);
+                  draggingPieceRef.current = null;
                   setDraggingPiece(null);
                 }}
                 style={[styles.solvePieceButton, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
               >
                 <Image source={{ uri: pieceUris[pieceIndex] ?? solveSamplePieces }} style={styles.solvePieceImage} resizeMode="cover" />
-              </Pressable>
+              </View>
             ))}
-          </ScrollView>
+          </View>
         )}
-        <Pressable style={({ pressed }) => [styles.solveArrowRight, pressed && styles.pressed]}>
+        <Pressable
+          onPress={() => setTrayPage((current) => Math.min(trayPageCount - 1, current + 1))}
+          disabled={trayPage >= trayPageCount - 1}
+          style={({ pressed }) => [
+            styles.solveArrowRight,
+            trayPage >= trayPageCount - 1 && styles.disabledSolveArrow,
+            pressed && trayPage < trayPageCount - 1 && styles.pressed,
+          ]}
+        >
           <Text style={styles.solveArrowText}>›</Text>
         </Pressable>
       </View>
@@ -1571,9 +1600,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   solvePieceRow: {
+    height: 136,
+    flexDirection: 'row',
     alignItems: 'center',
-    gap: 18,
-    paddingHorizontal: 18,
+    justifyContent: 'center',
+    gap: 24,
+    paddingHorizontal: 28,
   },
   solvePieceButton: {
     width: 108,
@@ -1647,6 +1679,9 @@ const styles = StyleSheet.create({
     fontSize: 30,
     lineHeight: 31,
     fontWeight: '300',
+  },
+  disabledSolveArrow: {
+    opacity: 0.35,
   },
   solveBottomSheet: {
     position: 'absolute',
