@@ -643,6 +643,7 @@ function PuzzleSolveScreen({ puzzleUri, onBack }: { puzzleUri: string; onBack: (
   const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(9).fill(null));
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
   const placedCount = placedPieces.filter((piece) => piece !== null).length;
+  const isSolved = placedCount === 9;
   const availablePieces = pieceUris.map((_, index) => index).filter((index) => !placedPieces.includes(index));
 
   useEffect(() => {
@@ -689,34 +690,42 @@ function PuzzleSolveScreen({ puzzleUri, onBack }: { puzzleUri: string; onBack: (
         </Text>
       </View>
 
-      <View style={styles.solveBoard}>
-        {Array.from({ length: 9 }).map((_, index) => {
-          const placedPiece = placedPieces[index];
-          return (
-            <Pressable key={index} onPress={() => placePiece(index)} style={styles.solveSlot}>
-              {placedPiece !== null && pieceUris[placedPiece] ? (
-                <Image source={{ uri: pieceUris[placedPiece] }} style={styles.solvePlacedPiece} resizeMode="cover" />
-              ) : null}
-            </Pressable>
-          );
-        })}
+      <View style={[styles.solveBoard, isSolved && styles.solvedBoard]}>
+        {isSolved ? (
+          <Image source={{ uri: puzzleUri }} style={styles.solvedPuzzleImage} resizeMode="cover" />
+        ) : (
+          Array.from({ length: 9 }).map((_, index) => {
+            const placedPiece = placedPieces[index];
+            return (
+              <Pressable key={index} onPress={() => placePiece(index)} style={styles.solveSlot}>
+                {placedPiece !== null && pieceUris[placedPiece] ? (
+                  <Image source={{ uri: pieceUris[placedPiece] }} style={styles.solvePlacedPiece} resizeMode="cover" />
+                ) : null}
+              </Pressable>
+            );
+          })
+        )}
       </View>
 
       <View style={styles.solveTray}>
         <Pressable style={({ pressed }) => [styles.solveArrowLeft, pressed && styles.pressed]}>
           <Text style={styles.solveArrowText}>‹</Text>
         </Pressable>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.solvePieceRow}>
-          {availablePieces.map((pieceIndex) => (
-            <Pressable
-              key={pieceIndex}
-              onPress={() => selectPiece(pieceIndex)}
-              style={[styles.solvePieceButton, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
-            >
-              <Image source={{ uri: pieceUris[pieceIndex] ?? solveSamplePieces }} style={styles.solvePieceImage} resizeMode="cover" />
-            </Pressable>
-          ))}
-        </ScrollView>
+        {isSolved ? (
+          <Text style={styles.solveEmptyTrayText}>남은 퍼즐 조각이 없습니다.</Text>
+        ) : (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.solvePieceRow}>
+            {availablePieces.map((pieceIndex) => (
+              <Pressable
+                key={pieceIndex}
+                onPress={() => selectPiece(pieceIndex)}
+                style={[styles.solvePieceButton, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
+              >
+                <Image source={{ uri: pieceUris[pieceIndex] ?? solveSamplePieces }} style={styles.solvePieceImage} resizeMode="cover" />
+              </Pressable>
+            ))}
+          </ScrollView>
+        )}
         <Pressable style={({ pressed }) => [styles.solveArrowRight, pressed && styles.pressed]}>
           <Text style={styles.solveArrowText}>›</Text>
         </Pressable>
@@ -1404,6 +1413,16 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
   },
+  solvedBoard: {
+    left: 26,
+    top: 178,
+    width: 337,
+    height: 305,
+  },
+  solvedPuzzleImage: {
+    width: '100%',
+    height: '100%',
+  },
   solveSlot: {
     width: 100.67,
     height: 100.67,
@@ -1449,6 +1468,13 @@ const styles = StyleSheet.create({
   solvePieceImage: {
     width: '100%',
     height: '100%',
+  },
+  solveEmptyTrayText: {
+    color: '#9f9f9f',
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0,
   },
   solveArrowLeft: {
     position: 'absolute',
