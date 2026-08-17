@@ -864,7 +864,7 @@ function PuzzleSolveScreen({
       {draggingPiece && pieceUris[draggingPiece.pieceIndex] ? (
         <Image
           source={{ uri: pieceUris[draggingPiece.pieceIndex] }}
-          style={[styles.draggingSolvePiece, { left: draggingPiece.x - 54, top: draggingPiece.y - 54 }]}
+          style={[styles.draggingSolvePiece, { left: draggingPiece.x - 63, top: draggingPiece.y - 63 }]}
           resizeMode="cover"
         />
       ) : null}
@@ -1592,8 +1592,11 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   solvePlacedPiece: {
-    width: '100%',
-    height: '100%',
+    position: 'absolute',
+    left: -13,
+    top: -13,
+    width: 126,
+    height: 126,
   },
   solveTray: {
     position: 'absolute',
@@ -1614,32 +1617,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 24,
-    paddingHorizontal: 28,
+    gap: 14,
+    paddingHorizontal: 18,
   },
   solvePieceButton: {
-    width: 108,
-    height: 108,
-    borderRadius: 10,
-    overflow: 'hidden',
-    borderWidth: 2,
-    borderColor: 'transparent',
+    width: 126,
+    height: 126,
+    borderRadius: 12,
   },
   selectedSolvePiece: {
-    borderColor: '#ab81ff',
     transform: [{ scale: 1.04 }],
+    opacity: 0.86,
   },
   draggingSolvePiece: {
     position: 'absolute',
-    width: 108,
-    height: 108,
-    borderRadius: 10,
+    width: 126,
+    height: 126,
+    borderRadius: 12,
     zIndex: 60,
     opacity: 0.94,
-    shadowColor: '#000',
-    shadowOpacity: 0.18,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
   },
   solvePieceImage: {
     width: '100%',

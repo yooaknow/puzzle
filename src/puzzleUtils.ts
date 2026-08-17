@@ -69,13 +69,17 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
       const sourceX = (naturalWidth - sourceSize) / 2;
       const sourceY = (naturalHeight - sourceSize) / 2;
       const cropSize = sourceSize / 3;
+      const cellSize = 100;
+      const margin = 13;
+      const pieceCanvasSize = cellSize + margin * 2;
+      const sourceMargin = cropSize * (margin / cellSize);
       const pieces: string[] = [];
 
       for (let row = 0; row < 3; row += 1) {
         for (let col = 0; col < 3; col += 1) {
           const canvas = webDocument.createElement('canvas');
-          canvas.width = 108;
-          canvas.height = 108;
+          canvas.width = pieceCanvasSize;
+          canvas.height = pieceCanvasSize;
           const context = canvas.getContext('2d');
 
           if (!context) {
@@ -83,8 +87,28 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
             continue;
           }
 
-          context.clearRect(0, 0, 108, 108);
-          context.drawImage(image, sourceX + col * cropSize, sourceY + row * cropSize, cropSize, cropSize, 0, 0, 108, 108);
+          context.clearRect(0, 0, pieceCanvasSize, pieceCanvasSize);
+          context.save();
+          drawPuzzlePiecePath(context, row, col, cellSize, margin);
+          context.clip();
+          context.drawImage(
+            image,
+            sourceX + col * cropSize - sourceMargin,
+            sourceY + row * cropSize - sourceMargin,
+            cropSize + sourceMargin * 2,
+            cropSize + sourceMargin * 2,
+            0,
+            0,
+            pieceCanvasSize,
+            pieceCanvasSize,
+          );
+          context.restore();
+          drawPuzzlePiecePath(context, row, col, cellSize, margin);
+          context.lineWidth = 1.2;
+          context.strokeStyle = 'rgba(42,42,42,0.42)';
+          context.lineJoin = 'round';
+          context.lineCap = 'round';
+          context.stroke();
           pieces.push(canvas.toDataURL('image/png'));
         }
       }
@@ -228,6 +252,94 @@ function getStorage() {
   return (globalThis as unknown as { localStorage?: WebStorage }).localStorage;
 }
 
+function drawPuzzlePiecePath(context: WebCanvasContext, row: number, col: number, size: number, margin: number) {
+  const x = margin;
+  const y = margin;
+
+  context.beginPath();
+  context.moveTo(x, y);
+
+  if (row === 0) {
+    context.lineTo(x + size, y);
+  } else {
+    drawHorizontalPieceEdge(context, x, y, size, getHorizontalTab(row - 1, col), false);
+  }
+
+  if (col === 2) {
+    context.lineTo(x + size, y + size);
+  } else {
+    drawVerticalPieceEdge(context, x + size, y, size, getVerticalTab(row, col), false);
+  }
+
+  if (row === 2) {
+    context.lineTo(x, y + size);
+  } else {
+    drawHorizontalPieceEdge(context, x, y + size, size, getHorizontalTab(row, col), true);
+  }
+
+  if (col === 0) {
+    context.lineTo(x, y);
+  } else {
+    drawVerticalPieceEdge(context, x, y, size, getVerticalTab(row, col - 1), true);
+  }
+
+  context.closePath();
+}
+
+function drawHorizontalPieceEdge(context: WebCanvasContext, x: number, y: number, size: number, tab: number, reverse: boolean) {
+  const neckIn = size * 0.34;
+  const neckOut = size * 0.42;
+  const crestIn = size * 0.47;
+  const crestOut = size * 0.53;
+  const returnIn = size * 0.58;
+  const returnOut = size * 0.66;
+  const depth = Math.min(14, size * 0.16);
+  const shoulder = tab * depth * 0.45;
+  const crest = tab * depth;
+
+  if (!reverse) {
+    context.lineTo(x + neckIn, y);
+    context.bezierCurveTo(x + neckOut, y, x + neckOut, y + shoulder, x + crestIn, y + shoulder);
+    context.bezierCurveTo(x + crestIn, y + crest, x + crestOut, y + crest, x + crestOut, y + shoulder);
+    context.bezierCurveTo(x + returnIn, y + shoulder, x + returnIn, y, x + returnOut, y);
+    context.lineTo(x + size, y);
+    return;
+  }
+
+  context.lineTo(x + returnOut, y);
+  context.bezierCurveTo(x + returnIn, y, x + returnIn, y + shoulder, x + crestOut, y + shoulder);
+  context.bezierCurveTo(x + crestOut, y + crest, x + crestIn, y + crest, x + crestIn, y + shoulder);
+  context.bezierCurveTo(x + neckOut, y + shoulder, x + neckOut, y, x + neckIn, y);
+  context.lineTo(x, y);
+}
+
+function drawVerticalPieceEdge(context: WebCanvasContext, x: number, y: number, size: number, tab: number, reverse: boolean) {
+  const neckIn = size * 0.34;
+  const neckOut = size * 0.42;
+  const crestIn = size * 0.47;
+  const crestOut = size * 0.53;
+  const returnIn = size * 0.58;
+  const returnOut = size * 0.66;
+  const depth = Math.min(14, size * 0.16);
+  const shoulder = tab * depth * 0.45;
+  const crest = tab * depth;
+
+  if (!reverse) {
+    context.lineTo(x, y + neckIn);
+    context.bezierCurveTo(x, y + neckOut, x + shoulder, y + neckOut, x + shoulder, y + crestIn);
+    context.bezierCurveTo(x + crest, y + crestIn, x + crest, y + crestOut, x + shoulder, y + crestOut);
+    context.bezierCurveTo(x + shoulder, y + returnIn, x, y + returnIn, x, y + returnOut);
+    context.lineTo(x, y + size);
+    return;
+  }
+
+  context.lineTo(x, y + returnOut);
+  context.bezierCurveTo(x, y + returnIn, x + shoulder, y + returnIn, x + shoulder, y + crestOut);
+  context.bezierCurveTo(x + crest, y + crestOut, x + crest, y + crestIn, x + shoulder, y + crestIn);
+  context.bezierCurveTo(x + shoulder, y + neckOut, x, y + neckOut, x, y + neckIn);
+  context.lineTo(x, y);
+}
+
 function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize, canvasSize = 330) {
   const inset = canvasSize === 330 ? 5 : 1;
   const extent = canvasSize - inset * 2;
@@ -268,22 +380,38 @@ function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize, canva
 }
 
 function drawVerticalCutSegment(context: WebCanvasContext, x: number, y: number, size: number, tab: number) {
-  const start = size * 0.36;
-  const end = size * 0.64;
-  const cp = size * 0.08;
-  const depth = Math.min(13, size * 0.16);
-  context.lineTo(x, y + start);
-  context.bezierCurveTo(x + tab * depth, y + start + cp, x + tab * depth, y + end - cp, x, y + end);
+  const neckIn = size * 0.34;
+  const neckOut = size * 0.42;
+  const crestIn = size * 0.47;
+  const crestOut = size * 0.53;
+  const returnIn = size * 0.58;
+  const returnOut = size * 0.66;
+  const depth = Math.min(14, size * 0.16);
+  const shoulder = tab * depth * 0.45;
+  const crest = tab * depth;
+
+  context.lineTo(x, y + neckIn);
+  context.bezierCurveTo(x, y + neckOut, x + shoulder, y + neckOut, x + shoulder, y + crestIn);
+  context.bezierCurveTo(x + crest, y + crestIn, x + crest, y + crestOut, x + shoulder, y + crestOut);
+  context.bezierCurveTo(x + shoulder, y + returnIn, x, y + returnIn, x, y + returnOut);
   context.lineTo(x, y + size);
 }
 
 function drawHorizontalCutSegment(context: WebCanvasContext, x: number, y: number, size: number, tab: number) {
-  const start = size * 0.36;
-  const end = size * 0.64;
-  const cp = size * 0.08;
-  const depth = Math.min(13, size * 0.16);
-  context.lineTo(x + start, y);
-  context.bezierCurveTo(x + start + cp, y + tab * depth, x + end - cp, y + tab * depth, x + end, y);
+  const neckIn = size * 0.34;
+  const neckOut = size * 0.42;
+  const crestIn = size * 0.47;
+  const crestOut = size * 0.53;
+  const returnIn = size * 0.58;
+  const returnOut = size * 0.66;
+  const depth = Math.min(14, size * 0.16);
+  const shoulder = tab * depth * 0.45;
+  const crest = tab * depth;
+
+  context.lineTo(x + neckIn, y);
+  context.bezierCurveTo(x + neckOut, y, x + neckOut, y + shoulder, x + crestIn, y + shoulder);
+  context.bezierCurveTo(x + crestIn, y + crest, x + crestOut, y + crest, x + crestOut, y + shoulder);
+  context.bezierCurveTo(x + returnIn, y + shoulder, x + returnIn, y, x + returnOut, y);
   context.lineTo(x + size, y);
 }
 
