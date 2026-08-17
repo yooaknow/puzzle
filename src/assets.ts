@@ -1,0 +1,19 @@
+export const splashPuzzleSheet = 'https://www.figma.com/api/mcp/asset/ae441a9c-063d-43c2-a521-623d855ca8d3.png';
+export const splashYellowPuzzle = 'https://www.figma.com/api/mcp/asset/0ff63011-24af-4898-b0f4-e8da2ece57c3.png';
+export const splashArm = 'https://www.figma.com/api/mcp/asset/6b2064cd-79fe-46a8-a5ad-c09649ecae1d.png';
+export const receivedPuzzleSheet = 'https://www.figma.com/api/mcp/asset/eab81957-2b2f-4eca-abc8-e02f4708010f.png';
+export const receivedYellowPuzzle = 'https://www.figma.com/api/mcp/asset/447e4709-65a2-47cb-bcb1-054e19de0e8c.png';
+export const receivedArm = 'https://www.figma.com/api/mcp/asset/d7d88e61-bc54-4cb5-8c1b-7e87320f2543.png';
+
+export const cardPuzzleSheet = 'https://www.figma.com/api/mcp/asset/f846a643-3012-4e46-a92f-eef9f80c9d42.png';
+export const cardPhotoPuzzle = 'https://www.figma.com/api/mcp/asset/f775d05c-a634-40bc-801e-a46f1483e166.png';
+export const uploadIcon = 'https://www.figma.com/api/mcp/asset/22f94e10-a508-4462-a847-192d1cb330fb.svg';
+export const puzzleBadgeIconAsset = 'https://www.figma.com/api/mcp/asset/464868cb-779f-4977-b5c2-d3e8576045ed.svg';
+export const photoBadgeIconAsset = 'https://www.figma.com/api/mcp/asset/38bc9ac2-9a33-47a6-a5fe-1f7212c7534a.svg';
+export const undoIconAsset = 'https://www.figma.com/api/mcp/asset/be3dba4d-fc17-4270-bb8b-4c0525a188da.svg';
+export const redoIconAsset = 'https://www.figma.com/api/mcp/asset/d73e4bd8-12d2-4c76-99c4-0726b1a4d407.svg';
+export const trashIconAsset = 'https://www.figma.com/api/mcp/asset/7c3e5bc3-acb7-4069-98ec-fd6913881a49.svg';
+export const celebrationAsset = 'https://www.figma.com/api/mcp/asset/2f7ee4bb-7339-4c4f-a339-d10c9fa2bd7d.png';
+export const loginPuzzleAsset = 'https://www.figma.com/api/mcp/asset/d064d28f-6804-4a09-96bf-fdc8e1e75ae0.png';
+export const solveSamplePuzzle = 'https://www.figma.com/api/mcp/asset/e9cf0a5e-74c8-4b10-8fbe-9b7cafe602a2.png';
+export const solveSamplePieces = 'https://www.figma.com/api/mcp/asset/2b8f7d78-1d61-445a-a8ea-2e8686db653a.png';
