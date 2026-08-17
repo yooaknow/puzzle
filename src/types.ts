@@ -68,6 +68,7 @@ export type WebCanvasContext = {
   fill: () => void;
   arc: (x: number, y: number, radius: number, startAngle: number, endAngle: number) => void;
   clearRect: (x: number, y: number, width: number, height: number) => void;
+  fillRect: (x: number, y: number, width: number, height: number) => void;
   lineWidth: number;
   strokeStyle: string;
   fillStyle: string;

@@ -58,6 +58,7 @@ import {
 } from './src/types';
 import {
   createDrawingOverlay,
+  createEmptyPuzzleBoard,
   createPuzzleImage,
   createPuzzlePieces,
   createSharedPuzzleId,
@@ -683,6 +684,7 @@ function PuzzleSolveScreen({
   const availablePieces = pieceUris.map((_, index) => index).filter((index) => !placedPieces.includes(index));
   const trayPageCount = Math.max(1, Math.ceil(availablePieces.length / 2));
   const visiblePieces = availablePieces.slice(trayPage * 2, trayPage * 2 + 2);
+  const emptyBoardUri = useMemo(() => createEmptyPuzzleBoard(), []);
 
   useEffect(() => {
     let isMounted = true;
@@ -788,16 +790,19 @@ function PuzzleSolveScreen({
         {isSolved ? (
           <Image source={{ uri: puzzleUri }} style={styles.solvedPuzzleImage} resizeMode="cover" />
         ) : (
-          Array.from({ length: 9 }).map((_, index) => {
-            const placedPiece = placedPieces[index];
-            return (
-              <View key={index} style={styles.solveSlot}>
-                {placedPiece !== null && pieceUris[placedPiece] ? (
-                  <Image source={{ uri: pieceUris[placedPiece] }} style={styles.solvePlacedPiece} resizeMode="cover" />
-                ) : null}
-              </View>
-            );
-          })
+          <>
+            <Image source={{ uri: emptyBoardUri }} style={styles.emptySolveBoardImage} resizeMode="cover" />
+            {Array.from({ length: 9 }).map((_, index) => {
+              const placedPiece = placedPieces[index];
+              return (
+                <View key={index} style={styles.solveSlot}>
+                  {placedPiece !== null && pieceUris[placedPiece] ? (
+                    <Image source={{ uri: pieceUris[placedPiece] }} style={styles.solvePlacedPiece} resizeMode="cover" />
+                  ) : null}
+                </View>
+              );
+            })}
+          </>
         )}
       </View>
 
@@ -1564,6 +1569,13 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
   },
+  emptySolveBoardImage: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 302,
+    height: 302,
+  },
   solvedBoard: {
     left: 26,
     top: 178,
@@ -1577,9 +1589,7 @@ const styles = StyleSheet.create({
   solveSlot: {
     width: 100.67,
     height: 100.67,
-    borderWidth: 0.6,
-    borderColor: 'rgba(42,42,42,0.1)',
-    backgroundColor: 'rgba(255,255,255,0.72)',
+    backgroundColor: 'transparent',
   },
   solvePlacedPiece: {
     width: '100%',

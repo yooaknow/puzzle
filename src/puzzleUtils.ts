@@ -96,6 +96,30 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
   });
 }
 
+export function createEmptyPuzzleBoard(size = 302, gridSize: GridSize = 3) {
+  const webDocument = (globalThis as unknown as { document?: WebCanvasDocument }).document;
+
+  if (!webDocument) {
+    return '';
+  }
+
+  const canvas = webDocument.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext('2d');
+
+  if (!context) {
+    return '';
+  }
+
+  context.clearRect(0, 0, size, size);
+  context.fillStyle = '#fff';
+  context.fillRect(0, 0, size, size);
+  drawPuzzleCutLines(context, gridSize, size);
+
+  return canvas.toDataURL('image/png');
+}
+
 export function createDrawingOverlay(strokes: DrawStroke[]) {
   const webDocument = (globalThis as unknown as { document?: WebCanvasDocument }).document;
 
@@ -204,13 +228,13 @@ function getStorage() {
   return (globalThis as unknown as { localStorage?: WebStorage }).localStorage;
 }
 
-function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize) {
-  const inset = 5;
-  const extent = 320;
+function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize, canvasSize = 330) {
+  const inset = canvasSize === 330 ? 5 : 1;
+  const extent = canvasSize - inset * 2;
   const size = extent / gridSize;
 
-  context.lineWidth = 1.35;
-  context.strokeStyle = 'rgba(42,42,42,0.42)';
+  context.lineWidth = canvasSize === 330 ? 1.35 : 1.1;
+  context.strokeStyle = canvasSize === 330 ? 'rgba(42,42,42,0.42)' : 'rgba(42,42,42,0.18)';
   context.lineJoin = 'round';
   context.lineCap = 'round';
 
