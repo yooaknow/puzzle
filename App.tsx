@@ -182,6 +182,9 @@ export default function App() {
         {screen === 'solve' && (
           <PuzzleSolveScreen
             puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
+            screenScale={scale}
+            screenOffsetX={(width - DESIGN_WIDTH * scale) / 2}
+            screenOffsetY={(height - DESIGN_HEIGHT * scale) / 2}
             onBack={goBack}
             onComplete={(puzzleUri) => {
               setSolvedPuzzleUri(puzzleUri);
@@ -655,10 +658,25 @@ function PuzzleCompleteScreen({
   );
 }
 
-function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: string; onBack: () => void; onComplete: (puzzleUri: string) => void }) {
+function PuzzleSolveScreen({
+  puzzleUri,
+  screenScale,
+  screenOffsetX,
+  screenOffsetY,
+  onBack,
+  onComplete,
+}: {
+  puzzleUri: string;
+  screenScale: number;
+  screenOffsetX: number;
+  screenOffsetY: number;
+  onBack: () => void;
+  onComplete: (puzzleUri: string) => void;
+}) {
   const [pieceUris, setPieceUris] = useState<string[]>([]);
   const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(9).fill(null));
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
+  const [draggingPiece, setDraggingPiece] = useState<{ pieceIndex: number; x: number; y: number } | null>(null);
   const placedCount = placedPieces.filter((piece) => piece !== null).length;
   const isSolved = placedCount === 9;
   const availablePieces = pieceUris.map((_, index) => index).filter((index) => !placedPieces.includes(index));
@@ -670,6 +688,7 @@ function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: strin
         setPieceUris(pieces);
         setPlacedPieces(Array(9).fill(null));
         setSelectedPiece(null);
+        setDraggingPiece(null);
       }
     });
 
@@ -678,21 +697,64 @@ function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: strin
     };
   }, [puzzleUri]);
 
-  const selectPiece = (pieceIndex: number) => {
-    setSelectedPiece(pieceIndex);
+  const getDesignPoint = (event: GestureResponderEvent) => {
+    const { pageX, pageY } = event.nativeEvent;
+    return {
+      x: (pageX - screenOffsetX) / screenScale,
+      y: (pageY - screenOffsetY) / screenScale,
+    };
   };
 
-  const placePiece = (slotIndex: number) => {
-    if (selectedPiece === null || placedPieces.includes(selectedPiece)) {
+  const getDropSlot = (event: GestureResponderEvent) => {
+    const point = getDesignPoint(event);
+    const boardLeft = 44;
+    const boardTop = 187;
+    const boardSize = 302;
+    const slotSize = boardSize / 3;
+
+    if (point.x < boardLeft || point.x > boardLeft + boardSize || point.y < boardTop || point.y > boardTop + boardSize) {
+      return null;
+    }
+
+    const col = Math.min(2, Math.floor((point.x - boardLeft) / slotSize));
+    const row = Math.min(2, Math.floor((point.y - boardTop) / slotSize));
+    return row * 3 + col;
+  };
+
+  const startDraggingPiece = (pieceIndex: number, event: GestureResponderEvent) => {
+    const point = getDesignPoint(event);
+    setSelectedPiece(pieceIndex);
+    setDraggingPiece({ pieceIndex, x: point.x, y: point.y });
+  };
+
+  const moveDraggingPiece = (event: GestureResponderEvent) => {
+    setDraggingPiece((current) => {
+      if (!current) {
+        return null;
+      }
+
+      const point = getDesignPoint(event);
+      return { ...current, x: point.x, y: point.y };
+    });
+  };
+
+  const finishDraggingPiece = (event: GestureResponderEvent) => {
+    if (!draggingPiece || placedPieces.includes(draggingPiece.pieceIndex)) {
+      setDraggingPiece(null);
       return;
     }
 
-    setPlacedPieces((current) => {
-      const next = current.slice();
-      next[slotIndex] = selectedPiece;
-      return next;
-    });
+    const slotIndex = getDropSlot(event);
+    if (slotIndex === draggingPiece.pieceIndex && placedPieces[slotIndex] === null) {
+      setPlacedPieces((current) => {
+        const next = current.slice();
+        next[slotIndex] = draggingPiece.pieceIndex;
+        return next;
+      });
+    }
+
     setSelectedPiece(null);
+    setDraggingPiece(null);
   };
 
   return (
@@ -714,11 +776,11 @@ function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: strin
           Array.from({ length: 9 }).map((_, index) => {
             const placedPiece = placedPieces[index];
             return (
-              <Pressable key={index} onPress={() => placePiece(index)} style={styles.solveSlot}>
+              <View key={index} style={styles.solveSlot}>
                 {placedPiece !== null && pieceUris[placedPiece] ? (
                   <Image source={{ uri: pieceUris[placedPiece] }} style={styles.solvePlacedPiece} resizeMode="cover" />
                 ) : null}
-              </Pressable>
+              </View>
             );
           })
         )}
@@ -735,7 +797,14 @@ function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: strin
             {availablePieces.map((pieceIndex) => (
               <Pressable
                 key={pieceIndex}
-                onPress={() => selectPiece(pieceIndex)}
+                onStartShouldSetResponder={() => true}
+                onResponderGrant={(event) => startDraggingPiece(pieceIndex, event)}
+                onResponderMove={moveDraggingPiece}
+                onResponderRelease={finishDraggingPiece}
+                onResponderTerminate={() => {
+                  setSelectedPiece(null);
+                  setDraggingPiece(null);
+                }}
                 style={[styles.solvePieceButton, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
               >
                 <Image source={{ uri: pieceUris[pieceIndex] ?? solveSamplePieces }} style={styles.solvePieceImage} resizeMode="cover" />
@@ -758,6 +827,13 @@ function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: strin
         </Pressable>
         <Text style={styles.solveHelperText}>조각을 선택해서 퍼즐판에 놓아보세요!</Text>
       </View>
+      {draggingPiece && pieceUris[draggingPiece.pieceIndex] ? (
+        <Image
+          source={{ uri: pieceUris[draggingPiece.pieceIndex] }}
+          style={[styles.draggingSolvePiece, { left: draggingPiece.x - 54, top: draggingPiece.y - 54 }]}
+          resizeMode="cover"
+        />
+      ) : null}
     </View>
   );
 }
@@ -1510,6 +1586,18 @@ const styles = StyleSheet.create({
   selectedSolvePiece: {
     borderColor: '#ab81ff',
     transform: [{ scale: 1.04 }],
+  },
+  draggingSolvePiece: {
+    position: 'absolute',
+    width: 108,
+    height: 108,
+    borderRadius: 10,
+    zIndex: 60,
+    opacity: 0.94,
+    shadowColor: '#000',
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
   },
   solvePieceImage: {
     width: '100%',

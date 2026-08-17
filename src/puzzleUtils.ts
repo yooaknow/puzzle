@@ -85,9 +85,6 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
 
           context.clearRect(0, 0, 108, 108);
           context.drawImage(image, sourceX + col * cropSize, sourceY + row * cropSize, cropSize, cropSize, 0, 0, 108, 108);
-          context.lineWidth = 1.4;
-          context.strokeStyle = 'rgba(42,42,42,0.28)';
-          context.stroke();
           pieces.push(canvas.toDataURL('image/png'));
         }
       }
