@@ -29,6 +29,8 @@ import {
   receivedPuzzleSheet,
   receivedYellowPuzzle,
   redoIconAsset,
+  solveCompleteCelebrationAsset,
+  solveCompletePuzzleAsset,
   solveSamplePieces,
   solveSamplePuzzle,
   splashArm,
@@ -74,6 +76,7 @@ export default function App() {
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [completedPuzzleUri, setCompletedPuzzleUri] = useState<string | null>(null);
+  const [solvedPuzzleUri, setSolvedPuzzleUri] = useState<string | null>(null);
   const [completedStrokes, setCompletedStrokes] = useState<DrawStroke[]>([]);
   const [completedTextStickers, setCompletedTextStickers] = useState<TextSticker[]>([]);
   const selectedPhotoUri = selectedPhotoIndex === null ? null : photoUris[selectedPhotoIndex];
@@ -133,6 +136,10 @@ export default function App() {
       setScreen('received');
       return;
     }
+    if (screen === 'solveComplete') {
+      setScreen('solve');
+      return;
+    }
     if (screen === 'received') {
       setScreen('splash');
       return;
@@ -172,7 +179,17 @@ export default function App() {
         {screen === 'complete' && completedPuzzleUri && (
           <PuzzleCompleteScreen puzzleUri={completedPuzzleUri} strokes={completedStrokes} textStickers={completedTextStickers} onBack={goBack} />
         )}
-        {screen === 'solve' && <PuzzleSolveScreen puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle} onBack={goBack} />}
+        {screen === 'solve' && (
+          <PuzzleSolveScreen
+            puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
+            onBack={goBack}
+            onComplete={(puzzleUri) => {
+              setSolvedPuzzleUri(puzzleUri);
+              setScreen('solveComplete');
+            }}
+          />
+        )}
+        {screen === 'solveComplete' && <SolvedPuzzleCompleteScreen puzzleUri={solvedPuzzleUri ?? completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle} onBack={goBack} />}
       </View>
     </SafeAreaView>
   );
@@ -638,7 +655,7 @@ function PuzzleCompleteScreen({
   );
 }
 
-function PuzzleSolveScreen({ puzzleUri, onBack }: { puzzleUri: string; onBack: () => void }) {
+function PuzzleSolveScreen({ puzzleUri, onBack, onComplete }: { puzzleUri: string; onBack: () => void; onComplete: (puzzleUri: string) => void }) {
   const [pieceUris, setPieceUris] = useState<string[]>([]);
   const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(9).fill(null));
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
@@ -734,11 +751,40 @@ function PuzzleSolveScreen({ puzzleUri, onBack }: { puzzleUri: string; onBack: (
       <View style={styles.solveBottomSheet}>
         <Pressable
           disabled={placedCount < 9}
+          onPress={() => onComplete(puzzleUri)}
           style={({ pressed }) => [styles.solveCompleteButton, placedCount < 9 && styles.disabledButton, pressed && placedCount === 9 && styles.pressed]}
         >
           <Text style={styles.primaryText}>퍼즐 완성하기</Text>
         </Pressable>
         <Text style={styles.solveHelperText}>조각을 선택해서 퍼즐판에 놓아보세요!</Text>
+      </View>
+    </View>
+  );
+}
+
+function SolvedPuzzleCompleteScreen({ puzzleUri, onBack }: { puzzleUri: string; onBack: () => void }) {
+  return (
+    <View style={styles.fill}>
+      <TopBar title="퍼즐 완성" onBack={onBack} withBorder />
+
+      <Image source={{ uri: solveCompleteCelebrationAsset }} style={styles.solvedCompleteCelebration} resizeMode="cover" />
+      <Text style={styles.solvedCompleteTitle}>
+        <Text style={styles.completeTitleAccent}>퍼즐</Text>이 완성됐어요!
+      </Text>
+      <Text style={styles.solvedCompleteSubtitle}>완성된 퍼즐을 확인해보세요.</Text>
+
+      <View style={styles.solvedCompletePuzzleFrame}>
+        <Image source={{ uri: puzzleUri }} style={styles.solvedCompletePuzzleImage} resizeMode="cover" />
+      </View>
+
+      <Pressable style={({ pressed }) => [styles.solvedSaveButton, pressed && styles.pressed]}>
+        <Text style={styles.primaryText}>로그인하고 저장하기</Text>
+      </Pressable>
+
+      <View style={styles.solvedLoginNotice}>
+        <Text style={styles.solvedLoginNoticeTitle}>이 순간을 함께 나누고 싶다면?</Text>
+        <Text style={styles.solvedLoginNoticeBody}>나만의 퍼즐을 만들어 선물해보세요.</Text>
+        <Image source={{ uri: solveCompletePuzzleAsset }} style={styles.solvedLoginNoticeImage} resizeMode="cover" />
       </View>
     </View>
   );
@@ -1549,6 +1595,97 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
+  },
+  solvedCompleteCelebration: {
+    position: 'absolute',
+    left: 161,
+    top: 136,
+    width: 67,
+    height: 100,
+  },
+  solvedCompleteTitle: {
+    position: 'absolute',
+    left: 36,
+    top: 241,
+    width: 318,
+    color: '#030303',
+    fontSize: 27,
+    lineHeight: 40,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
+  solvedCompleteSubtitle: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 288,
+    color: '#9f9f9f',
+    fontSize: 17,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
+  solvedCompletePuzzleFrame: {
+    position: 'absolute',
+    left: 22,
+    top: 334,
+    width: 347,
+    height: 314,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(42,42,42,0.45)',
+    overflow: 'hidden',
+    backgroundColor: '#d3d3d3',
+  },
+  solvedCompletePuzzleImage: {
+    width: '100%',
+    height: '100%',
+  },
+  solvedSaveButton: {
+    position: 'absolute',
+    left: 29,
+    top: 686,
+    width: 343,
+    height: 54,
+    borderRadius: 8,
+    backgroundColor: '#2d3440',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  solvedLoginNotice: {
+    position: 'absolute',
+    left: 24,
+    top: 754,
+    width: 342,
+    height: 74,
+    borderRadius: 7,
+    backgroundColor: 'rgba(171,129,255,0.1)',
+    overflow: 'hidden',
+  },
+  solvedLoginNoticeTitle: {
+    position: 'absolute',
+    left: 15,
+    top: 13,
+    color: '#141517',
+    fontSize: 15,
+    lineHeight: 28,
+    fontWeight: '700',
+  },
+  solvedLoginNoticeBody: {
+    position: 'absolute',
+    left: 15,
+    top: 42,
+    color: '#6933d5',
+    fontSize: 13,
+    fontWeight: '400',
+  },
+  solvedLoginNoticeImage: {
+    position: 'absolute',
+    right: 25,
+    top: 3,
+    width: 55,
+    height: 66,
   },
   bottomHelperText: {
     position: 'absolute',
