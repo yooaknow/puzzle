@@ -10,7 +10,7 @@ export const DESIGN_HEIGHT = 844;
 export const TILE_WIDTH = 111;
 export const TILE_HEIGHT = 147;
 export const GRID_LEFT = 21;
-export const GRID_TOP = 126;
+export const GRID_TOP = 146;
 export const GRID_GAP_X = 22;
 export const GRID_GAP_Y = 14;
 

@@ -180,6 +180,7 @@ export default function App() {
         {screen === 'puzzle' && selectedPhotoUri && (
           <PuzzleDecorateScreen
             photoUri={selectedPhotoUri}
+            screenScale={scale}
             onBack={goBack}
             onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
               setCompletedPuzzleUri(puzzleUri);
@@ -486,10 +487,12 @@ function PhotoSelectScreen({
 
 function PuzzleDecorateScreen({
   photoUri,
+  screenScale,
   onBack,
   onComplete,
 }: {
   photoUri: string;
+  screenScale: number;
   onBack: () => void;
   onComplete: (puzzleUri: string, puzzleSourceUri: string, gridSize: GridSize, strokes: DrawStroke[], textStickers: TextSticker[]) => void;
 }) {
@@ -526,9 +529,11 @@ function PuzzleDecorateScreen({
 
   const getDrawPoint = (event: GestureResponderEvent) => {
     const { locationX, locationY } = event.nativeEvent;
+    const coordinateScale = screenScale > 0 ? screenScale : 1;
+
     return {
-      x: Math.max(0, Math.min(330, locationX)),
-      y: Math.max(0, Math.min(330, locationY)),
+      x: Math.max(0, Math.min(330, locationX / coordinateScale)),
+      y: Math.max(0, Math.min(330, locationY / coordinateScale)),
     };
   };
 
