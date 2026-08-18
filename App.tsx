@@ -216,7 +216,14 @@ export default function App() {
             }}
           />
         )}
-        {screen === 'solveComplete' && <SolvedPuzzleCompleteScreen puzzleUri={solvedPuzzleUri ?? completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle} onBack={goBack} />}
+        {screen === 'solveComplete' && (
+          <SolvedPuzzleCompleteScreen
+            puzzleUri={solvedPuzzleUri ?? completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
+            gridSize={completedPuzzleUri ? completedGridSize : getStoredPuzzleGridSize(getSharedPuzzleId())}
+            onBack={goBack}
+            onLogin={() => setScreen('login')}
+          />
+        )}
       </View>
     </SafeAreaView>
   );
@@ -998,7 +1005,7 @@ function PuzzleSolveScreen({
       <View style={styles.solveBottomSheet}>
         <Pressable
           disabled={placedCount < totalPieces}
-          onPress={() => onComplete(puzzleUri)}
+          onPress={() => onComplete(puzzleSourceUri)}
           style={({ pressed }) => [styles.solveCompleteButton, placedCount < totalPieces && styles.disabledButton, pressed && placedCount === totalPieces && styles.pressed]}
         >
           <Text style={styles.primaryText}>퍼즐 완성하기</Text>
@@ -1019,7 +1026,33 @@ function PuzzleSolveScreen({
   );
 }
 
-function SolvedPuzzleCompleteScreen({ puzzleUri, onBack }: { puzzleUri: string; onBack: () => void }) {
+function SolvedPuzzleCompleteScreen({
+  puzzleUri,
+  gridSize,
+  onBack,
+  onLogin,
+}: {
+  puzzleUri: string;
+  gridSize: GridSize;
+  onBack: () => void;
+  onLogin: () => void;
+}) {
+  const [displayPuzzleUri, setDisplayPuzzleUri] = useState(puzzleUri);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    createPuzzleImage(puzzleUri, gridSize).then((nextUri) => {
+      if (isMounted) {
+        setDisplayPuzzleUri(nextUri);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [puzzleUri, gridSize]);
+
   return (
     <View style={styles.fill}>
       <TopBar title="퍼즐 완성" onBack={onBack} withBorder />
@@ -1031,18 +1064,18 @@ function SolvedPuzzleCompleteScreen({ puzzleUri, onBack }: { puzzleUri: string; 
       <Text style={styles.solvedCompleteSubtitle}>완성된 퍼즐을 확인해보세요.</Text>
 
       <View style={styles.solvedCompletePuzzleFrame}>
-        <Image source={{ uri: puzzleUri }} style={styles.solvedCompletePuzzleImage} resizeMode="cover" />
+        <Image source={{ uri: displayPuzzleUri }} style={styles.solvedCompletePuzzleImage} resizeMode="cover" />
       </View>
 
-      <Pressable style={({ pressed }) => [styles.solvedSaveButton, pressed && styles.pressed]}>
+      <Pressable onPress={onLogin} style={({ pressed }) => [styles.solvedSaveButton, pressed && styles.pressed]}>
         <Text style={styles.primaryText}>로그인하고 저장하기</Text>
       </Pressable>
 
-      <View style={styles.solvedLoginNotice}>
+      <Pressable onPress={onLogin} style={({ pressed }) => [styles.solvedLoginNotice, pressed && styles.pressed]}>
         <Text style={styles.solvedLoginNoticeTitle}>이 순간을 함께 나누고 싶다면?</Text>
         <Text style={styles.solvedLoginNoticeBody}>나만의 퍼즐을 만들어 선물해보세요.</Text>
         <Image source={{ uri: solveCompletePuzzleAsset }} style={styles.solvedLoginNoticeImage} resizeMode="cover" />
-      </View>
+      </Pressable>
     </View>
   );
 }
