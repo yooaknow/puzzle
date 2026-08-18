@@ -1,10 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   GestureResponderEvent,
   Image,
   ImageStyle,
+  LayoutChangeEvent,
   Pressable,
   SafeAreaView,
   Share,
@@ -55,6 +56,7 @@ import {
   TILE_WIDTH,
   WebDocument,
   WebNavigator,
+  WebStorage,
   WebUrl,
 } from './src/types';
 import {
@@ -76,6 +78,27 @@ import {
   widthFromSlider,
 } from './src/puzzleUtils';
 
+const EMPTY_PHOTO_URIS: string[] = [];
+const DRAW_COLORS = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#914fec', '#ed72bd', '#ecc192', '#feffff', '#000', '#fff'];
+const TEXT_COLORS = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#fff', '#000'];
+const AUTH_ACCOUNTS_KEY = 'puzzlw:authAccounts';
+const AUTH_SESSION_KEY = 'puzzlw:authSession';
+
+type AuthAccount = {
+  name: string;
+  email: string;
+  password: string;
+  slug: string;
+};
+
+type AuthCredentials = {
+  mode: 'login' | 'signup';
+  name: string;
+  email: string;
+  password: string;
+  passwordConfirm: string;
+};
+
 export default function App() {
   const [screen, setScreen] = useState<ScreenName>(() => (isSharedLink() ? 'received' : 'splash'));
   const [photoUris, setPhotoUris] = useState<string[]>([]);
@@ -86,9 +109,41 @@ export default function App() {
   const [solvedPuzzleUri, setSolvedPuzzleUri] = useState<string | null>(null);
   const [completedStrokes, setCompletedStrokes] = useState<DrawStroke[]>([]);
   const [completedTextStickers, setCompletedTextStickers] = useState<TextSticker[]>([]);
+  const [currentAccount, setCurrentAccount] = useState<AuthAccount | null>(() => getStoredAuthSession());
   const selectedPhotoUri = selectedPhotoIndex === null ? null : photoUris[selectedPhotoIndex];
   const { width, height } = useWindowDimensions();
-  const scale = Math.min(width / DESIGN_WIDTH, height / DESIGN_HEIGHT);
+  const sharedPuzzleId = useMemo(() => getSharedPuzzleId(), []);
+  const storedPuzzleUri = useMemo(() => getStoredPuzzleUri(sharedPuzzleId), [sharedPuzzleId]);
+  const storedPuzzleSourceUri = useMemo(() => getStoredPuzzleSourceUri(sharedPuzzleId), [sharedPuzzleId]);
+  const storedPuzzleGridSize = useMemo(() => getStoredPuzzleGridSize(sharedPuzzleId), [sharedPuzzleId]);
+  const activeSolvePuzzleUri = completedPuzzleUri ?? storedPuzzleUri ?? solveSamplePuzzle;
+  const activeSolvePuzzleSourceUri = completedPuzzleSourceUri ?? storedPuzzleSourceUri ?? completedPuzzleUri ?? storedPuzzleUri ?? solveSamplePuzzle;
+  const activeSolveGridSize = completedPuzzleUri ? completedGridSize : storedPuzzleGridSize;
+  const [viewportSize, setViewportSize] = useState({ width, height });
+  const scale = getResponsiveScale(viewportSize.width, viewportSize.height);
+  const screenOffsetX = (viewportSize.width - DESIGN_WIDTH * scale) / 2;
+  const screenOffsetY = (viewportSize.height - DESIGN_HEIGHT * scale) / 2;
+
+  const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
+    const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
+    setViewportSize((current) => {
+      if (Math.abs(current.width - nextWidth) < 0.5 && Math.abs(current.height - nextHeight) < 0.5) {
+        return current;
+      }
+      return { width: nextWidth, height: nextHeight };
+    });
+  }, []);
+
+  const handleAuthSubmit = useCallback((credentials: AuthCredentials) => {
+    const result = authenticateAccount(credentials);
+    if (!result.account) {
+      return result.error;
+    }
+
+    setCurrentAccount(result.account);
+    setScreen('card');
+    return null;
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -159,13 +214,27 @@ export default function App() {
   };
 
   return (
-    <SafeAreaView style={styles.root}>
+    <SafeAreaView style={styles.root} onLayout={handleRootLayout}>
       <StatusBar style="dark" backgroundColor="#fff" />
       <View style={[styles.screen, { transform: [{ scale }] }]}>
-        {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen('login')} />}
+        {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen(currentAccount ? 'card' : 'login')} />}
         {screen === 'received' && <ReceivedLinkScreen onOpenPuzzle={() => setScreen('solve')} />}
-        {screen === 'login' && <AuthScreen mode="login" onBack={goBack} onSwitchMode={() => setScreen('signup')} />}
-        {screen === 'signup' && <AuthScreen mode="signup" onBack={goBack} onSwitchMode={() => setScreen('login')} />}
+        {screen === 'login' && (
+          <AuthScreen
+            mode="login"
+            onBack={goBack}
+            onSwitchMode={() => setScreen('signup')}
+            onSubmit={handleAuthSubmit}
+          />
+        )}
+        {screen === 'signup' && (
+          <AuthScreen
+            mode="signup"
+            onBack={goBack}
+            onSwitchMode={() => setScreen('login')}
+            onSubmit={handleAuthSubmit}
+          />
+        )}
         {screen === 'card' && <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />}
         {screen === 'photos' && (
           <PhotoSelectScreen
@@ -182,6 +251,7 @@ export default function App() {
             photoUri={selectedPhotoUri}
             screenScale={scale}
             onBack={goBack}
+            onChangePhoto={() => setScreen('photos')}
             onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
               setCompletedPuzzleUri(puzzleUri);
               setCompletedPuzzleSourceUri(puzzleSourceUri);
@@ -204,12 +274,12 @@ export default function App() {
         )}
         {screen === 'solve' && (
           <PuzzleSolveScreen
-            puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
-            puzzleSourceUri={completedPuzzleSourceUri ?? getStoredPuzzleSourceUri(getSharedPuzzleId()) ?? completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
-            gridSize={completedPuzzleUri ? completedGridSize : getStoredPuzzleGridSize(getSharedPuzzleId())}
+            puzzleUri={activeSolvePuzzleUri}
+            puzzleSourceUri={activeSolvePuzzleSourceUri}
+            gridSize={activeSolveGridSize}
             screenScale={scale}
-            screenOffsetX={(width - DESIGN_WIDTH * scale) / 2}
-            screenOffsetY={(height - DESIGN_HEIGHT * scale) / 2}
+            screenOffsetX={screenOffsetX}
+            screenOffsetY={screenOffsetY}
             onBack={goBack}
             onComplete={(puzzleUri) => {
               setSolvedPuzzleUri(puzzleUri);
@@ -219,8 +289,8 @@ export default function App() {
         )}
         {screen === 'solveComplete' && (
           <SolvedPuzzleCompleteScreen
-            puzzleUri={solvedPuzzleUri ?? completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
-            gridSize={completedPuzzleUri ? completedGridSize : getStoredPuzzleGridSize(getSharedPuzzleId())}
+            puzzleUri={solvedPuzzleUri ?? activeSolvePuzzleUri}
+            gridSize={activeSolveGridSize}
             onBack={goBack}
             onLogin={() => setScreen('login')}
           />
@@ -287,16 +357,19 @@ function AuthScreen({
   mode,
   onBack,
   onSwitchMode,
+  onSubmit,
 }: {
   mode: 'login' | 'signup';
   onBack: () => void;
   onSwitchMode: () => void;
+  onSubmit: (credentials: AuthCredentials) => string | null;
 }) {
   const isSignup = mode === 'signup';
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
+  const [authError, setAuthError] = useState('');
   const canSubmit = email.trim().length > 0 && password.length > 0 && (!isSignup || (name.trim().length > 0 && passwordConfirm.length > 0));
 
   return (
@@ -328,9 +401,14 @@ function AuthScreen({
       </View>
 
       {!isSignup ? <Text style={styles.authForgotText}>비밀번호를 잊으셨나요?</Text> : null}
+      {authError.length > 0 ? <Text style={styles.authErrorText}>{authError}</Text> : null}
 
       <Pressable
         disabled={!canSubmit}
+        onPress={() => {
+          const error = onSubmit({ mode, name, email, password, passwordConfirm });
+          setAuthError(error ?? '');
+        }}
         style={({ pressed }) => [
           styles.authPrimaryButton,
           !canSubmit && styles.disabledButton,
@@ -379,6 +457,115 @@ function AuthInput({
         style={styles.authInput}
       />
     </View>
+  );
+}
+
+function createProfileSlug(value: string) {
+  const rawSlug = value.trim().split('@')[0]?.trim() || 'minji';
+  return encodeURIComponent(rawSlug.replace(/\s+/g, '-').toLowerCase());
+}
+
+function authenticateAccount(credentials: AuthCredentials): { account: AuthAccount | null; error: string | null } {
+  const email = normalizeEmail(credentials.email);
+  const password = credentials.password.trim();
+
+  if (!email.includes('@')) {
+    return { account: null, error: '이메일 형식을 확인해주세요.' };
+  }
+
+  if (password.length < 4) {
+    return { account: null, error: '비밀번호는 4자 이상 입력해주세요.' };
+  }
+
+  const accounts = getStoredAuthAccounts();
+  const existingAccount = accounts.find((account) => account.email === email);
+
+  if (credentials.mode === 'signup') {
+    const name = credentials.name.trim();
+    if (name.length === 0) {
+      return { account: null, error: '이름을 입력해주세요.' };
+    }
+
+    if (credentials.password !== credentials.passwordConfirm) {
+      return { account: null, error: '비밀번호 확인이 일치하지 않아요.' };
+    }
+
+    if (existingAccount) {
+      return { account: null, error: '이미 가입된 이메일이에요. 로그인해주세요.' };
+    }
+
+    const account = { name, email, password, slug: createProfileSlug(name) };
+    saveStoredAuthAccounts([...accounts, account]);
+    saveStoredAuthSession(account);
+    return { account, error: null };
+  }
+
+  if (!existingAccount || existingAccount.password !== password) {
+    return { account: null, error: '이메일 또는 비밀번호가 맞지 않아요.' };
+  }
+
+  saveStoredAuthSession(existingAccount);
+  return { account: existingAccount, error: null };
+}
+
+function normalizeEmail(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function getStoredAuthAccounts() {
+  try {
+    const storage = getBrowserStorage();
+    const value = storage?.getItem(AUTH_ACCOUNTS_KEY);
+    if (!value) {
+      return [];
+    }
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter(isAuthAccount) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveStoredAuthAccounts(accounts: AuthAccount[]) {
+  try {
+    getBrowserStorage()?.setItem(AUTH_ACCOUNTS_KEY, JSON.stringify(accounts));
+  } catch {
+    // Storage can be unavailable in private browsing or restricted webviews.
+  }
+}
+
+function getStoredAuthSession() {
+  try {
+    const value = getBrowserStorage()?.getItem(AUTH_SESSION_KEY);
+    if (!value) {
+      return null;
+    }
+    const parsed = JSON.parse(value);
+    return isAuthAccount(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStoredAuthSession(account: AuthAccount) {
+  try {
+    getBrowserStorage()?.setItem(AUTH_SESSION_KEY, JSON.stringify(account));
+  } catch {
+    // Storage can be unavailable in private browsing or restricted webviews.
+  }
+}
+
+function getBrowserStorage() {
+  return (globalThis as unknown as { localStorage?: WebStorage }).localStorage;
+}
+
+function isAuthAccount(value: unknown): value is AuthAccount {
+  const account = value as Partial<AuthAccount>;
+  return (
+    typeof account?.name === 'string' &&
+    typeof account.email === 'string' &&
+    typeof account.password === 'string' &&
+    typeof account.slug === 'string'
   );
 }
 
@@ -433,19 +620,27 @@ function PhotoSelectScreen({
   onSelectPhoto: (index: number) => void;
   onMakePuzzle: () => void;
 }) {
-  const hasSelection = selectedPhotoIndex !== null;
+  const [activePhotoTab, setActivePhotoTab] = useState<'recent' | 'favorites'>('recent');
+  const favoritePhotoUris = EMPTY_PHOTO_URIS;
+  const visiblePhotoUris = activePhotoTab === 'recent' ? photoUris : favoritePhotoUris;
+  const hasSelection = activePhotoTab === 'recent' && selectedPhotoIndex !== null;
+  const isFavoritesTab = activePhotoTab === 'favorites';
 
   return (
     <View style={styles.fill}>
       <TopBar title="사진 선택" onBack={onBack} />
       <View style={styles.tabBar}>
-        <Text style={styles.activeTab}>최근 항목</Text>
-        <Text style={styles.inactiveTab}>즐겨 찾기</Text>
-        <View style={styles.activeTabLine} />
+        <Pressable onPress={() => setActivePhotoTab('recent')} style={[styles.photoTab, styles.recentPhotoTab]}>
+          <Text style={[styles.photoTabText, activePhotoTab === 'recent' ? styles.activePhotoTabText : styles.inactivePhotoTabText]}>최근 항목</Text>
+        </Pressable>
+        <Pressable onPress={() => setActivePhotoTab('favorites')} style={[styles.photoTab, styles.favoritePhotoTab]}>
+          <Text style={[styles.photoTabText, isFavoritesTab ? styles.activePhotoTabText : styles.inactivePhotoTabText]}>즐겨 찾기</Text>
+        </Pressable>
+        <View style={[styles.activeTabLine, isFavoritesTab && styles.favoriteTabLine]} />
       </View>
 
       <View style={styles.photoGrid}>
-        {photoUris.map((uri, index) => {
+        {visiblePhotoUris.map((uri, index) => {
           const isSelected = selectedPhotoIndex === index;
           const isDimmed = hasSelection && !isSelected;
           const row = Math.floor(index / 3);
@@ -469,6 +664,12 @@ function PhotoSelectScreen({
             </Pressable>
           );
         })}
+        {isFavoritesTab && visiblePhotoUris.length === 0 ? (
+          <View style={styles.emptyFavoriteState}>
+            <Text style={styles.emptyFavoriteTitle}>즐겨찾기한 사진이 없어요</Text>
+            <Text style={styles.emptyFavoriteBody}>최근 항목에서 사진을 선택해 퍼즐을 만들어보세요.</Text>
+          </View>
+        ) : null}
       </View>
 
       <View style={styles.bottomPanel}>
@@ -489,11 +690,13 @@ function PuzzleDecorateScreen({
   photoUri,
   screenScale,
   onBack,
+  onChangePhoto,
   onComplete,
 }: {
   photoUri: string;
   screenScale: number;
   onBack: () => void;
+  onChangePhoto: () => void;
   onComplete: (puzzleUri: string, puzzleSourceUri: string, gridSize: GridSize, strokes: DrawStroke[], textStickers: TextSticker[]) => void;
 }) {
   const [tool, setTool] = useState<'draw' | 'text'>('draw');
@@ -632,9 +835,9 @@ function PuzzleDecorateScreen({
           <Image source={{ uri: puzzleBadgeIconAsset }} style={styles.puzzleBadgeIcon} resizeMode="contain" />
           <Text style={styles.puzzleBadgeText}>{gridSize}X{gridSize}</Text>
         </Pressable>
-        <View style={styles.imageBadge}>
+        <Pressable onPress={onChangePhoto} style={({ pressed }) => [styles.imageBadge, pressed && styles.pressed]} hitSlop={8}>
           <Image source={{ uri: photoBadgeIconAsset }} style={styles.imageBadgeIcon} resizeMode="contain" />
-        </View>
+        </Pressable>
       </View>
 
       <View style={styles.puzzleControls}>
@@ -647,7 +850,7 @@ function PuzzleDecorateScreen({
           </Pressable>
         </View>
         {tool === 'draw' ? (
-          <DrawPanel penColor={penColor} penWidth={penWidth} onColorChange={setPenColor} onWidthChange={setPenWidth} />
+          <DrawPanel penColor={penColor} penWidth={penWidth} screenScale={screenScale} onColorChange={setPenColor} onWidthChange={setPenWidth} />
         ) : (
           <TextPanelEditor text={textDraft} textColor={textColor} onTextChange={updateTextDraft} onColorChange={updateTextColor} />
         )}
@@ -829,8 +1032,9 @@ function PuzzleSolveScreen({
   const slotSize = boardSize / gridSize;
   const pieceMargin = getPuzzlePieceMargin(slotSize);
   const placedPieceSize = slotSize + pieceMargin * 2;
-  const trayPieceSize = gridSize === 3 ? 128 : gridSize === 4 ? 104 : 86;
+  const trayPieceSize = gridSize === 3 ? 108 : gridSize === 4 ? 92 : 78;
   const [pieceUris, setPieceUris] = useState<string[]>([]);
+  const [trayPieceOrder, setTrayPieceOrder] = useState<number[]>([]);
   const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(totalPieces).fill(null));
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
   const [draggingPiece, setDraggingPiece] = useState<{ pieceIndex: number; x: number; y: number } | null>(null);
@@ -838,9 +1042,11 @@ function PuzzleSolveScreen({
   const [trayPage, setTrayPage] = useState(0);
   const placedCount = placedPieces.filter((piece) => piece !== null).length;
   const isSolved = placedCount === totalPieces;
-  const availablePieces = pieceUris.map((_, index) => index).filter((index) => !placedPieces.includes(index));
+  const placedPieceSet = useMemo(() => new Set(placedPieces.filter((piece): piece is number => piece !== null)), [placedPieces]);
+  const availablePieces = useMemo(() => trayPieceOrder.filter((index) => !placedPieceSet.has(index)), [trayPieceOrder, placedPieceSet]);
   const trayPageCount = Math.max(1, Math.ceil(availablePieces.length / 2));
-  const visiblePieces = availablePieces.slice(trayPage * 2, trayPage * 2 + 2);
+  const visiblePieces = useMemo(() => availablePieces.slice(trayPage * 2, trayPage * 2 + 2), [availablePieces, trayPage]);
+  const boardSlots = useMemo(() => Array.from({ length: totalPieces }, (_, index) => index), [totalPieces]);
   const emptyBoardUri = useMemo(() => createEmptyPuzzleBoard(boardSize, gridSize), [gridSize]);
   const slotStyle = useMemo<StyleProp<ViewStyle>>(() => ({ width: slotSize, height: slotSize }), [slotSize]);
   const placedPieceStyle = useMemo<StyleProp<ImageStyle>>(
@@ -854,6 +1060,7 @@ function PuzzleSolveScreen({
     createPuzzlePieces(puzzleSourceUri, gridSize).then((pieces) => {
       if (isMounted) {
         setPieceUris(pieces);
+        setTrayPieceOrder(shufflePieceOrder(pieces.length));
         setPlacedPieces(Array(totalPieces).fill(null));
         setSelectedPiece(null);
         setDraggingPiece(null);
@@ -882,7 +1089,7 @@ function PuzzleSolveScreen({
   const getDropSlot = (event: GestureResponderEvent) => {
     const point = getDesignPoint(event);
     const boardLeft = 44;
-    const boardTop = 187;
+    const boardTop = 152;
     const slotSize = boardSize / gridSize;
 
     if (point.x < boardLeft || point.x > boardLeft + boardSize || point.y < boardTop || point.y > boardTop + boardSize) {
@@ -916,7 +1123,7 @@ function PuzzleSolveScreen({
 
   const finishDraggingPiece = (event: GestureResponderEvent) => {
     const currentDraggingPiece = draggingPieceRef.current;
-    if (!currentDraggingPiece || placedPieces.includes(currentDraggingPiece.pieceIndex)) {
+    if (!currentDraggingPiece || placedPieceSet.has(currentDraggingPiece.pieceIndex)) {
       draggingPieceRef.current = null;
       setDraggingPiece(null);
       return;
@@ -950,7 +1157,7 @@ function PuzzleSolveScreen({
 
       <View style={styles.solveBoard}>
         <Image source={{ uri: emptyBoardUri }} style={styles.emptySolveBoardImage} resizeMode="cover" />
-        {Array.from({ length: totalPieces }).map((_, index) => {
+        {boardSlots.map((index) => {
           const placedPiece = placedPieces[index];
           return (
             <View key={index} style={[styles.solveSlot, slotStyle]}>
@@ -968,7 +1175,7 @@ function PuzzleSolveScreen({
           disabled={trayPage === 0}
           style={({ pressed }) => [styles.solveArrowLeft, trayPage === 0 && styles.disabledSolveArrow, pressed && trayPage > 0 && styles.pressed]}
         >
-          <Text style={styles.solveArrowText}>‹</Text>
+          <View style={[styles.solveArrowChevron, styles.solveArrowChevronLeft]} />
         </Pressable>
         {isSolved ? (
           <Text style={styles.solveEmptyTrayText}>남은 퍼즐 조각이 없습니다.</Text>
@@ -1003,7 +1210,7 @@ function PuzzleSolveScreen({
             pressed && trayPage < trayPageCount - 1 && styles.pressed,
           ]}
         >
-          <Text style={styles.solveArrowText}>›</Text>
+          <View style={styles.solveArrowChevron} />
         </Pressable>
       </View>
 
@@ -1029,6 +1236,18 @@ function PuzzleSolveScreen({
       ) : null}
     </View>
   );
+}
+
+function shufflePieceOrder(pieceCount: number) {
+  const order = Array.from({ length: pieceCount }, (_, index) => index);
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1));
+    [order[index], order[swapIndex]] = [order[swapIndex], order[index]];
+  }
+  if (pieceCount > 1 && order.every((pieceIndex, index) => pieceIndex === index)) {
+    [order[0], order[1]] = [order[1], order[0]];
+  }
+  return order;
 }
 
 function SolvedPuzzleCompleteScreen({
@@ -1088,20 +1307,22 @@ function SolvedPuzzleCompleteScreen({
 function DrawPanel({
   penColor,
   penWidth,
+  screenScale,
   onColorChange,
   onWidthChange,
 }: {
   penColor: string;
   penWidth: number;
+  screenScale: number;
   onColorChange: (color: string) => void;
   onWidthChange: (width: number) => void;
 }) {
-  const colors = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#914fec', '#ed72bd', '#ecc192', '#feffff', '#000', '#fff'];
+  const getSliderWidth = (locationX: number) => widthFromSlider(locationX / Math.max(screenScale, 0.01));
 
   return (
     <View style={styles.panelBody}>
       <View style={styles.colorGrid}>
-        {colors.map((color, index) => (
+        {DRAW_COLORS.map((color, index) => (
           <Pressable
             key={`${color}-${index}`}
             onPress={() => onColorChange(color)}
@@ -1111,12 +1332,14 @@ function DrawPanel({
       </View>
       <Text style={styles.sliderLabel}>펜 굵기</Text>
       <View
-        style={styles.sliderTrack}
+        style={styles.sliderTouchArea}
         onStartShouldSetResponder={() => true}
-        onResponderGrant={(event) => onWidthChange(widthFromSlider(event.nativeEvent.locationX))}
-        onResponderMove={(event) => onWidthChange(widthFromSlider(event.nativeEvent.locationX))}
+        onResponderGrant={(event) => onWidthChange(getSliderWidth(event.nativeEvent.locationX))}
+        onResponderMove={(event) => onWidthChange(getSliderWidth(event.nativeEvent.locationX))}
       >
-        <View style={[styles.sliderFill, { width: sliderOffsetFromWidth(penWidth) }]} />
+        <View style={styles.sliderTrack}>
+          <View style={[styles.sliderFill, { width: sliderOffsetFromWidth(penWidth) }]} />
+        </View>
         <View style={[styles.sliderThumb, { left: sliderOffsetFromWidth(penWidth) - 7 }]} />
       </View>
       <Text style={styles.sliderValue}>{penWidth}px</Text>
@@ -1130,7 +1353,7 @@ function TextPanel() {
       <TextInput style={styles.textBox} placeholder="텍스트를 입력하세요" placeholderTextColor="rgba(90,89,89,0.5)" multiline />
       <Text style={styles.textColorLabel}>글자 색상</Text>
       <View style={styles.textColorRow}>
-        {['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#fff', '#000'].map((color, index) => (
+        {TEXT_COLORS.map((color, index) => (
           <View key={`${color}-${index}`} style={[styles.textColorSwatch, { backgroundColor: color }]} />
         ))}
       </View>
@@ -1149,8 +1372,6 @@ function TextPanelEditor({
   onTextChange: (text: string) => void;
   onColorChange: (color: string) => void;
 }) {
-  const colors = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#fff', '#000'];
-
   return (
     <View style={styles.panelBody}>
       <TextInput
@@ -1163,7 +1384,7 @@ function TextPanelEditor({
       />
       <Text style={styles.textColorLabel}>글자 색상</Text>
       <View style={styles.textColorRow}>
-        {colors.map((color, index) => (
+        {TEXT_COLORS.map((color, index) => (
           <Pressable
             key={`${color}-${index}`}
             onPress={() => onColorChange(color)}
@@ -1201,23 +1422,59 @@ function PuzzleCrop({ image, style, cropStyle, opacity }: PuzzleCropProps) {
   );
 }
 
+const designSystem = {
+  color: {
+    background: '#fff',
+    text: '#141517',
+    muted: '#9f9f9f',
+    primary: '#ab81ff',
+    primaryDark: '#6933d5',
+    button: '#2d3440',
+    disabled: '#d9d9d9',
+    border: '#e6e7e9',
+    panelBorder: 'rgba(129,129,129,0.2)',
+  },
+  radius: {
+    button: 8,
+    panel: 10,
+    card: 12,
+  },
+  size: {
+    screenWidth: DESIGN_WIDTH,
+    screenHeight: DESIGN_HEIGHT,
+    buttonWidth: 343,
+    buttonHeight: 54,
+    topBarHeight: 58,
+  },
+  font: {
+    topBarTitle: 17,
+    body: 15,
+    caption: 13,
+    hero: 27,
+  },
+} as const;
+
+function getResponsiveScale(width: number, height: number) {
+  return Math.min(width / designSystem.size.screenWidth, height / designSystem.size.screenHeight);
+}
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     overflow: 'hidden',
   },
   screen: {
-    width: DESIGN_WIDTH,
-    height: DESIGN_HEIGHT,
-    backgroundColor: '#fff',
+    width: designSystem.size.screenWidth,
+    height: designSystem.size.screenHeight,
+    backgroundColor: designSystem.color.background,
     overflow: 'hidden',
   },
   fill: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
   },
   cropBox: {
     position: 'absolute',
@@ -1310,10 +1567,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 29,
     top: 694,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1321,7 +1578,7 @@ const styles = StyleSheet.create({
     opacity: 0.86,
   },
   primaryText: {
-    color: '#fff',
+    color: designSystem.color.background,
     fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0,
@@ -1330,7 +1587,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 27,
     top: 10,
-    color: '#fff',
+    color: designSystem.color.background,
     fontSize: 38,
     lineHeight: 38,
     fontWeight: '300',
@@ -1345,8 +1602,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   splashLoginText: {
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
@@ -1406,8 +1663,8 @@ const styles = StyleSheet.create({
   authSubtitle: {
     marginTop: 10,
     width: 300,
-    color: '#9f9f9f',
-    fontSize: 13,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.caption,
     lineHeight: 19,
     fontWeight: '500',
     textAlign: 'center',
@@ -1417,11 +1674,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 29,
     top: 348,
-    width: 343,
+    width: designSystem.size.buttonWidth,
     gap: 12,
   },
   authInputGroup: {
-    width: 343,
+    width: designSystem.size.buttonWidth,
     height: 68,
   },
   authInputLabel: {
@@ -1433,14 +1690,14 @@ const styles = StyleSheet.create({
   },
   authInput: {
     marginTop: 5,
-    width: 343,
+    width: designSystem.size.buttonWidth,
     height: 45,
-    borderRadius: 8,
+    borderRadius: designSystem.radius.button,
     borderWidth: 1,
-    borderColor: 'rgba(129,129,129,0.22)',
-    backgroundColor: '#fff',
+    borderColor: designSystem.color.panelBorder,
+    backgroundColor: designSystem.color.background,
     paddingHorizontal: 15,
-    color: '#141517',
+    color: designSystem.color.text,
     fontSize: 14,
     fontWeight: '500',
     letterSpacing: 0,
@@ -1449,19 +1706,30 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 29,
     top: 506,
-    color: '#ab81ff',
+    color: designSystem.color.primary,
     fontSize: 13,
     fontWeight: '700',
     letterSpacing: 0,
+  },
+  authErrorText: {
+    position: 'absolute',
+    left: 29,
+    right: 29,
+    top: 560,
+    color: '#e24b4b',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    textAlign: 'center',
   },
   authPrimaryButton: {
     position: 'absolute',
     left: 29,
     top: 705,
-    width: 343,
+    width: designSystem.size.buttonWidth,
     height: 50,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1475,14 +1743,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   authSwitchText: {
-    color: '#9f9f9f',
+    color: designSystem.color.muted,
     fontSize: 14,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
   },
   authSwitchAccent: {
-    color: '#ab81ff',
+    color: designSystem.color.primary,
     fontWeight: '800',
   },
   receivedHeroPuzzleWrap: {
@@ -1569,10 +1837,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 29,
     top: 735,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1581,15 +1849,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 0,
-    height: 58,
+    height: designSystem.size.topBarHeight,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     zIndex: 20,
   },
   topBarBorder: {
     borderBottomWidth: 1.2,
-    borderBottomColor: '#e6e7e9',
+    borderBottomColor: designSystem.color.border,
   },
   backButton: {
     position: 'absolute',
@@ -1601,14 +1869,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   backIcon: {
-    color: '#141517',
-    fontSize: 38,
-    lineHeight: 38,
+    color: designSystem.color.text,
+    fontSize: 32,
+    lineHeight: 32,
     fontWeight: '300',
   },
   topBarTitle: {
-    color: '#141517',
-    fontSize: 19,
+    color: designSystem.color.text,
+    fontSize: designSystem.font.topBarTitle,
     fontWeight: '700',
     letterSpacing: 0,
   },
@@ -1646,8 +1914,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 180,
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
@@ -1700,7 +1968,7 @@ const styles = StyleSheet.create({
   },
   cardTitleLine: {
     color: '#030303',
-    fontSize: 27,
+    fontSize: designSystem.font.hero,
     lineHeight: 40,
     fontWeight: '800',
     textAlign: 'center',
@@ -1725,10 +1993,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 29,
     top: 694,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -1737,8 +2005,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 770,
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
@@ -1747,36 +2015,40 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 58,
+    top: designSystem.size.topBarHeight,
     height: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f1f1',
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     zIndex: 15,
   },
-  activeTab: {
+  photoTab: {
     position: 'absolute',
-    left: 50,
-    top: 20,
-    width: 110,
-    color: '#ab81ff',
+    top: 0,
+    width: 201.5,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  recentPhotoTab: {
+    left: 0,
+  },
+  favoritePhotoTab: {
+    right: 0,
+  },
+  photoTabText: {
     fontSize: 16,
     lineHeight: 20,
-    fontWeight: '700',
     textAlign: 'center',
     letterSpacing: 0,
   },
-  inactiveTab: {
-    position: 'absolute',
-    left: 242,
-    top: 20,
-    width: 110,
+  activePhotoTabText: {
+    color: designSystem.color.primary,
+    fontWeight: '700',
+  },
+  inactivePhotoTabText: {
     color: '#666',
-    fontSize: 16,
-    lineHeight: 20,
     fontWeight: '500',
-    textAlign: 'center',
-    letterSpacing: 0,
   },
   activeTabLine: {
     position: 'absolute',
@@ -1784,13 +2056,16 @@ const styles = StyleSheet.create({
     bottom: -1,
     width: 200,
     height: 2,
-    backgroundColor: '#ab81ff',
+    backgroundColor: designSystem.color.primary,
+  },
+  favoriteTabLine: {
+    left: 201.5,
   },
   photoGrid: {
     position: 'absolute',
     left: GRID_LEFT,
     top: GRID_TOP,
-    width: 368,
+    width: TILE_WIDTH * 3 + GRID_GAP_X * 2,
     height: 580,
   },
   photoTile: {
@@ -1816,6 +2091,28 @@ const styles = StyleSheet.create({
     bottom: 0,
     backgroundColor: 'rgba(19,19,19,0.3)',
   },
+  emptyFavoriteState: {
+    position: 'absolute',
+    left: 0,
+    top: 150,
+    width: TILE_WIDTH * 3 + GRID_GAP_X * 2,
+    alignItems: 'center',
+  },
+  emptyFavoriteTitle: {
+    color: '#5a5959',
+    fontSize: 16,
+    lineHeight: 24,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  emptyFavoriteBody: {
+    marginTop: 8,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.caption,
+    lineHeight: 20,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
   bottomPanel: {
     position: 'absolute',
     left: 0,
@@ -1824,7 +2121,7 @@ const styles = StyleSheet.create({
     height: 173,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -20 },
     shadowOpacity: 0.22,
@@ -1835,24 +2132,24 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 29,
     top: 24,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
   disabledButton: {
-    backgroundColor: '#d9d9d9',
+    backgroundColor: designSystem.color.disabled,
   },
   solveCounter: {
     position: 'absolute',
-    right: 17,
-    top: 126,
+    right: 57,
+    top: 96,
     width: 86,
     height: 33,
     borderRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1872,7 +2169,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
   },
   solveCounterDone: {
-    color: '#ab81ff',
+    color: designSystem.color.primary,
   },
   solveCounterTotal: {
     color: '#cecece',
@@ -1880,12 +2177,12 @@ const styles = StyleSheet.create({
   solveBoard: {
     position: 'absolute',
     left: 44,
-    top: 187,
+    top: 152,
     width: 302,
     height: 302,
     borderRadius: 0,
     overflow: 'hidden',
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     flexDirection: 'row',
     flexWrap: 'wrap',
     shadowColor: '#000',
@@ -1914,12 +2211,12 @@ const styles = StyleSheet.create({
   },
   solveTray: {
     position: 'absolute',
-    left: 43,
-    top: 526,
-    width: 330,
+    left: 44,
+    top: 464,
+    width: 302,
     height: 136,
-    borderRadius: 10,
-    backgroundColor: '#fff',
+    borderRadius: designSystem.radius.panel,
+    backgroundColor: designSystem.color.background,
     shadowColor: '#000',
     shadowOpacity: 0.08,
     shadowRadius: 10,
@@ -1932,12 +2229,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 14,
-    paddingHorizontal: 18,
   },
   solvePieceButton: {
     width: 128,
     height: 128,
-    borderRadius: 12,
+    borderRadius: designSystem.radius.card,
   },
   selectedSolvePiece: {
     transform: [{ scale: 1.04 }],
@@ -1947,7 +2243,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     width: 128,
     height: 128,
-    borderRadius: 12,
+    borderRadius: designSystem.radius.card,
     zIndex: 60,
     opacity: 0.94,
   },
@@ -1956,20 +2252,20 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   solveEmptyTrayText: {
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
   },
   solveArrowLeft: {
     position: 'absolute',
-    left: -20,
-    top: 45,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#fff',
+    left: 8,
+    top: 50,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: designSystem.color.background,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
@@ -1980,12 +2276,12 @@ const styles = StyleSheet.create({
   },
   solveArrowRight: {
     position: 'absolute',
-    right: -20,
-    top: 45,
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#fff',
+    right: 8,
+    top: 50,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: designSystem.color.background,
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
@@ -1994,11 +2290,16 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 2 },
   },
-  solveArrowText: {
-    color: '#9f9f9f',
-    fontSize: 30,
-    lineHeight: 31,
-    fontWeight: '300',
+  solveArrowChevron: {
+    width: 9,
+    height: 9,
+    borderTopWidth: 2,
+    borderRightWidth: 2,
+    borderColor: '#b6b6b6',
+    transform: [{ rotate: '45deg' }],
+  },
+  solveArrowChevronLeft: {
+    transform: [{ rotate: '-135deg' }],
   },
   disabledSolveArrow: {
     opacity: 0.35,
@@ -2011,7 +2312,7 @@ const styles = StyleSheet.create({
     height: 173,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
     shadowColor: '#000',
     shadowOpacity: 0.2,
     shadowRadius: 50,
@@ -2021,10 +2322,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 44,
     top: 24,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -2033,8 +2334,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 96,
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
@@ -2042,17 +2343,17 @@ const styles = StyleSheet.create({
   solvedCompleteCelebration: {
     position: 'absolute',
     left: 161,
-    top: 136,
+    top: 101,
     width: 67,
     height: 100,
   },
   solvedCompleteTitle: {
     position: 'absolute',
     left: 36,
-    top: 241,
+    top: 206,
     width: 318,
     color: '#030303',
-    fontSize: 27,
+    fontSize: designSystem.font.hero,
     lineHeight: 40,
     fontWeight: '900',
     textAlign: 'center',
@@ -2062,8 +2363,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 288,
-    color: '#9f9f9f',
+    top: 253,
+    color: designSystem.color.muted,
     fontSize: 17,
     fontWeight: '500',
     textAlign: 'center',
@@ -2072,10 +2373,10 @@ const styles = StyleSheet.create({
   solvedCompletePuzzleFrame: {
     position: 'absolute',
     left: 22,
-    top: 334,
+    top: 299,
     width: 347,
     height: 314,
-    borderRadius: 12,
+    borderRadius: designSystem.radius.card,
     borderWidth: 1,
     borderColor: 'rgba(42,42,42,0.45)',
     overflow: 'hidden',
@@ -2088,18 +2389,18 @@ const styles = StyleSheet.create({
   solvedSaveButton: {
     position: 'absolute',
     left: 29,
-    top: 686,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    top: 651,
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
   solvedLoginNotice: {
     position: 'absolute',
     left: 24,
-    top: 754,
+    top: 719,
     width: 342,
     height: 74,
     borderRadius: 7,
@@ -2110,8 +2411,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 15,
     top: 13,
-    color: '#141517',
-    fontSize: 15,
+    color: designSystem.color.text,
+    fontSize: designSystem.font.body,
     lineHeight: 28,
     fontWeight: '700',
   },
@@ -2119,8 +2420,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 15,
     top: 42,
-    color: '#6933d5',
-    fontSize: 13,
+    color: designSystem.color.primaryDark,
+    fontSize: designSystem.font.caption,
     fontWeight: '400',
   },
   solvedLoginNoticeImage: {
@@ -2135,8 +2436,8 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     top: 96,
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
@@ -2147,7 +2448,7 @@ const styles = StyleSheet.create({
     top: 89,
     width: 330,
     height: 330,
-    borderRadius: 8,
+    borderRadius: designSystem.radius.button,
     borderWidth: 1,
     borderColor: 'rgba(42,42,42,0.24)',
     backgroundColor: '#d3d3d3',
@@ -2234,14 +2535,14 @@ const styles = StyleSheet.create({
   puzzleControls: {
     position: 'absolute',
     left: 36,
-    top: 509,
+    top: 487,
     width: 330,
     height: 227,
-    borderRadius: 10,
+    borderRadius: designSystem.radius.panel,
     borderWidth: 1,
-    borderColor: 'rgba(129,129,129,0.2)',
+    borderColor: designSystem.color.panelBorder,
     overflow: 'hidden',
-    backgroundColor: '#fff',
+    backgroundColor: designSystem.color.background,
   },
   toolTabs: {
     height: 43,
@@ -2255,17 +2556,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   activeToolTab: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 10,
-    borderTopRightRadius: 10,
+    backgroundColor: designSystem.color.background,
+    borderTopLeftRadius: designSystem.radius.panel,
+    borderTopRightRadius: designSystem.radius.panel,
   },
   toolTabText: {
-    color: '#9f9f9f',
-    fontSize: 15,
+    color: designSystem.color.muted,
+    fontSize: designSystem.font.body,
     fontWeight: '500',
   },
   activeToolTabText: {
-    color: '#ab81ff',
+    color: designSystem.color.primary,
     fontWeight: '700',
   },
   panelBody: {
@@ -2278,7 +2579,7 @@ const styles = StyleSheet.create({
   colorGrid: {
     position: 'absolute',
     left: 28,
-    top: 22,
+    top: 24,
     width: 276,
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2298,15 +2599,20 @@ const styles = StyleSheet.create({
   sliderLabel: {
     position: 'absolute',
     left: 28,
-    top: 132,
+    top: 136,
     color: 'rgba(90,89,89,0.7)',
     fontSize: 13,
     fontWeight: '700',
   },
-  sliderTrack: {
+  sliderTouchArea: {
     position: 'absolute',
     left: 28,
-    top: 159,
+    top: 153,
+    width: 242,
+    height: 28,
+    justifyContent: 'center',
+  },
+  sliderTrack: {
     width: 242,
     height: 5,
     borderRadius: 50,
@@ -2320,7 +2626,7 @@ const styles = StyleSheet.create({
   sliderThumb: {
     position: 'absolute',
     left: 91,
-    top: -5,
+    top: 7,
     width: 14,
     height: 14,
     borderRadius: 7,
@@ -2329,7 +2635,7 @@ const styles = StyleSheet.create({
   sliderValue: {
     position: 'absolute',
     right: 27,
-    top: 151,
+    top: 155,
     color: 'rgba(90,89,89,0.7)',
     fontSize: 12,
     fontWeight: '700',
@@ -2337,7 +2643,7 @@ const styles = StyleSheet.create({
   textBox: {
     position: 'absolute',
     left: 17,
-    top: 17,
+    top: 20,
     width: 293,
     height: 71,
     borderRadius: 5,
@@ -2346,13 +2652,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     paddingTop: 10,
     color: '#141517',
-    fontSize: 12,
+    fontSize: 14,
+    lineHeight: 18,
     textAlignVertical: 'top',
   },
   textColorLabel: {
     position: 'absolute',
     left: 20,
-    top: 103,
+    top: 110,
     color: 'rgba(90,89,89,0.7)',
     fontSize: 13,
     fontWeight: '700',
@@ -2360,7 +2667,7 @@ const styles = StyleSheet.create({
   textColorRow: {
     position: 'absolute',
     left: 20,
-    top: 122,
+    top: 138,
     flexDirection: 'row',
     gap: 7,
   },
@@ -2417,18 +2724,18 @@ const styles = StyleSheet.create({
   completeButton: {
     position: 'absolute',
     left: 29,
-    top: 782,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    top: 744,
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
   celebrationImage: {
     position: 'absolute',
     left: 168,
-    top: 136,
+    top: 106,
     width: 67,
     height: 100,
   },
@@ -2436,23 +2743,23 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 36,
     right: 36,
-    top: 241,
+    top: 211,
     color: '#030303',
-    fontSize: 27,
+    fontSize: designSystem.font.hero,
     lineHeight: 40,
     fontWeight: '900',
     textAlign: 'center',
     letterSpacing: 0,
   },
   completeTitleAccent: {
-    color: '#ab81ff',
+    color: designSystem.color.primary,
   },
   completeSubtitle: {
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 292,
-    color: '#9f9f9f',
+    top: 262,
+    color: designSystem.color.muted,
     fontSize: 17,
     lineHeight: 24,
     fontWeight: '500',
@@ -2462,10 +2769,10 @@ const styles = StyleSheet.create({
   completedPuzzleFrame: {
     position: 'absolute',
     left: 30,
-    top: 334,
+    top: 304,
     width: 330,
     height: 330,
-    borderRadius: 12,
+    borderRadius: designSystem.radius.card,
     borderWidth: 1,
     borderColor: 'rgba(42,42,42,0.45)',
     overflow: 'hidden',
@@ -2501,18 +2808,18 @@ const styles = StyleSheet.create({
   shareButton: {
     position: 'absolute',
     left: 29,
-    top: 686,
-    width: 343,
-    height: 54,
-    borderRadius: 8,
-    backgroundColor: '#2d3440',
+    top: 656,
+    width: designSystem.size.buttonWidth,
+    height: designSystem.size.buttonHeight,
+    borderRadius: designSystem.radius.button,
+    backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
   },
   loginNotice: {
     position: 'absolute',
     left: 30,
-    top: 754,
+    top: 724,
     width: 342,
     height: 74,
     borderRadius: 7,

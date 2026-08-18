@@ -291,11 +291,11 @@ export function getStoredPuzzleUri(puzzleId?: string | null) {
 
 export function widthFromSlider(locationX: number) {
   const clamped = Math.max(0, Math.min(242, locationX));
-  return Math.max(1, Math.min(12, Math.round(1 + (clamped / 242) * 11)));
+  return Math.max(1, Math.min(9, Math.round(1 + (clamped / 242) * 8)));
 }
 
 export function sliderOffsetFromWidth(width: number) {
-  return ((width - 1) / 11) * 242;
+  return ((width - 1) / 8) * 242;
 }
 
 function getStorage() {

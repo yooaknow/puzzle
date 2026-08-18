@@ -7,11 +7,11 @@ export const SHARE_PUZZLE_GRID_SIZE_PREFIX = 'puzzlw:sharedPuzzleGridSize:';
 
 export const DESIGN_WIDTH = 390;
 export const DESIGN_HEIGHT = 844;
-export const TILE_WIDTH = 111;
-export const TILE_HEIGHT = 147;
-export const GRID_LEFT = 21;
+export const TILE_WIDTH = 106;
+export const TILE_HEIGHT = 140;
+export const GRID_LEFT = 30;
 export const GRID_TOP = 146;
-export const GRID_GAP_X = 22;
+export const GRID_GAP_X = 12;
 export const GRID_GAP_Y = 14;
 
 export type ScreenName = 'splash' | 'received' | 'login' | 'signup' | 'card' | 'photos' | 'puzzle' | 'complete' | 'solve' | 'solveComplete';
