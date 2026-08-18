@@ -15,6 +15,7 @@ export const redoIconAsset = 'https://www.figma.com/api/mcp/asset/d73e4bd8-12d2-
 export const trashIconAsset = 'https://www.figma.com/api/mcp/asset/7c3e5bc3-acb7-4069-98ec-fd6913881a49.svg';
 export const celebrationAsset = 'https://www.figma.com/api/mcp/asset/2f7ee4bb-7339-4c4f-a339-d10c9fa2bd7d.png';
 export const loginPuzzleAsset = 'https://www.figma.com/api/mcp/asset/d064d28f-6804-4a09-96bf-fdc8e1e75ae0.png';
+export const authPuzzleIconAsset = 'https://www.figma.com/api/mcp/asset/ffe605f5-e46c-4f05-9c6b-e9bf8bb13507.png';
 export const solveSamplePuzzle = 'https://www.figma.com/api/mcp/asset/e9cf0a5e-74c8-4b10-8fbe-9b7cafe602a2.png';
 export const solveSamplePieces = 'https://www.figma.com/api/mcp/asset/2b8f7d78-1d61-445a-a8ea-2e8686db653a.png';
 export const solveCompleteCelebrationAsset = 'https://www.figma.com/api/mcp/asset/62296c14-a491-4bcc-a37f-660222321ed3.png';

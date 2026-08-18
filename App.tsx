@@ -38,6 +38,7 @@ import {
   trashIconAsset,
   undoIconAsset,
   uploadIcon,
+  authPuzzleIconAsset,
 } from './src/assets';
 import {
   DESIGN_HEIGHT,
@@ -150,6 +151,10 @@ export default function App() {
       setScreen('splash');
       return;
     }
+    if (screen === 'login' || screen === 'signup') {
+      setScreen('splash');
+      return;
+    }
     setScreen('splash');
   };
 
@@ -157,8 +162,10 @@ export default function App() {
     <SafeAreaView style={styles.root}>
       <StatusBar style="dark" backgroundColor="#fff" />
       <View style={[styles.screen, { transform: [{ scale }] }]}>
-        {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} />}
+        {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen('login')} />}
         {screen === 'received' && <ReceivedLinkScreen onOpenPuzzle={() => setScreen('solve')} />}
+        {screen === 'login' && <AuthScreen mode="login" onBack={goBack} onSwitchMode={() => setScreen('signup')} />}
+        {screen === 'signup' && <AuthScreen mode="signup" onBack={goBack} onSwitchMode={() => setScreen('login')} />}
         {screen === 'card' && <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />}
         {screen === 'photos' && (
           <PhotoSelectScreen
@@ -215,7 +222,7 @@ export default function App() {
   );
 }
 
-function SplashScreen({ onStart }: { onStart: () => void }) {
+function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () => void }) {
   return (
     <View style={styles.fill}>
       <View style={styles.splashHeroPuzzleWrap}>
@@ -236,7 +243,9 @@ function SplashScreen({ onStart }: { onStart: () => void }) {
         <Text style={styles.primaryText}>퍼즐 만들기</Text>
         <Text style={styles.chevron}>›</Text>
       </Pressable>
-      <Text style={styles.splashLoginText}>로그인 · 내 퍼즐함</Text>
+      <Pressable onPress={onLogin} style={({ pressed }) => [styles.splashLoginButton, pressed && styles.pressed]}>
+        <Text style={styles.splashLoginText}>로그인 · 내 퍼즐함</Text>
+      </Pressable>
     </View>
   );
 }
@@ -262,6 +271,105 @@ function ReceivedLinkScreen({ onOpenPuzzle }: { onOpenPuzzle: () => void }) {
         <Text style={styles.primaryText}>퍼즐 확인하기</Text>
         <Text style={styles.chevron}>›</Text>
       </Pressable>
+    </View>
+  );
+}
+
+function AuthScreen({
+  mode,
+  onBack,
+  onSwitchMode,
+}: {
+  mode: 'login' | 'signup';
+  onBack: () => void;
+  onSwitchMode: () => void;
+}) {
+  const isSignup = mode === 'signup';
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [passwordConfirm, setPasswordConfirm] = useState('');
+  const canSubmit = email.trim().length > 0 && password.length > 0 && (!isSignup || (name.trim().length > 0 && passwordConfirm.length > 0));
+
+  return (
+    <View style={styles.fill}>
+      <TopBar title={isSignup ? '회원가입' : '로그인'} onBack={onBack} withBorder />
+
+      <View style={styles.authHeroPuzzleWrap}>
+        <Image source={{ uri: authPuzzleIconAsset }} style={styles.authHeroPuzzle} resizeMode="contain" />
+      </View>
+      <PuzzleCrop image={splashPuzzleSheet} style={styles.authPinkPuzzle} cropStyle={styles.authPinkCrop} opacity={0.7} />
+      <PuzzleCrop image={splashPuzzleSheet} style={styles.authPurplePuzzle} cropStyle={styles.authPurpleCrop} opacity={0.65} />
+
+      <View style={styles.authTitleBlock}>
+        <Text style={styles.authTitle}>{isSignup ? '퍼즐을 보관할' : '내 퍼즐함을'}{'\n'}{isSignup ? '공간을 만들어요' : '열어볼까요?'}</Text>
+        <Text style={styles.authSubtitle}>
+          {isSignup ? '보낸 퍼즐과 받은 퍼즐을\n한곳에 모아둘 수 있어요.' : '퍼즐함에서 만들고 받은 퍼즐을\n이어서 확인해보세요.'}
+        </Text>
+      </View>
+
+      <View style={styles.authForm}>
+        {isSignup ? (
+          <AuthInput label="이름" value={name} onChangeText={setName} placeholder="이름을 입력하세요" />
+        ) : null}
+        <AuthInput label="이메일" value={email} onChangeText={setEmail} placeholder="이메일을 입력하세요" keyboardType="email-address" />
+        <AuthInput label="비밀번호" value={password} onChangeText={setPassword} placeholder="비밀번호를 입력하세요" secureTextEntry />
+        {isSignup ? (
+          <AuthInput label="비밀번호 확인" value={passwordConfirm} onChangeText={setPasswordConfirm} placeholder="비밀번호를 한 번 더 입력하세요" secureTextEntry />
+        ) : null}
+      </View>
+
+      {!isSignup ? <Text style={styles.authForgotText}>비밀번호를 잊으셨나요?</Text> : null}
+
+      <Pressable
+        disabled={!canSubmit}
+        style={({ pressed }) => [
+          styles.authPrimaryButton,
+          !canSubmit && styles.disabledButton,
+          pressed && canSubmit && styles.pressed,
+        ]}
+      >
+        <Text style={styles.primaryText}>{isSignup ? '회원가입하기' : '로그인하기'}</Text>
+      </Pressable>
+
+      <Pressable onPress={onSwitchMode} style={({ pressed }) => [styles.authSwitchButton, pressed && styles.pressed]}>
+        <Text style={styles.authSwitchText}>
+          {isSignup ? '이미 계정이 있나요? ' : '아직 계정이 없나요? '}
+          <Text style={styles.authSwitchAccent}>{isSignup ? '로그인' : '회원가입'}</Text>
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function AuthInput({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  keyboardType = 'default',
+  secureTextEntry = false,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (text: string) => void;
+  placeholder: string;
+  keyboardType?: 'default' | 'email-address';
+  secureTextEntry?: boolean;
+}) {
+  return (
+    <View style={styles.authInputGroup}>
+      <Text style={styles.authInputLabel}>{label}</Text>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor="rgba(90,89,89,0.45)"
+        keyboardType={keyboardType}
+        secureTextEntry={secureTextEntry}
+        autoCapitalize="none"
+        style={styles.authInput}
+      />
     </View>
   );
 }
@@ -1176,7 +1284,7 @@ const styles = StyleSheet.create({
   },
   primaryText: {
     color: '#fff',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     letterSpacing: 0,
   },
@@ -1189,16 +1297,155 @@ const styles = StyleSheet.create({
     lineHeight: 38,
     fontWeight: '300',
   },
-  splashLoginText: {
+  splashLoginButton: {
     position: 'absolute',
     left: 0,
     right: 0,
     top: 770,
+    height: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashLoginText: {
     color: '#9f9f9f',
     fontSize: 15,
     fontWeight: '500',
     textAlign: 'center',
     letterSpacing: 0,
+  },
+  authHeroPuzzleWrap: {
+    position: 'absolute',
+    left: 140,
+    top: 82,
+    width: 110,
+    height: 110,
+  },
+  authHeroPuzzle: {
+    width: '100%',
+    height: '100%',
+  },
+  authPinkPuzzle: {
+    left: 30,
+    top: 126,
+    width: 43,
+    height: 41,
+    transform: [{ rotate: '-155deg' }],
+  },
+  authPinkCrop: {
+    left: -84,
+    top: -5,
+    width: 157,
+    height: 105,
+  },
+  authPurplePuzzle: {
+    left: 322,
+    top: 159,
+    width: 36,
+    height: 31,
+    transform: [{ rotate: '-12deg' }],
+  },
+  authPurpleCrop: {
+    left: -22,
+    top: -42,
+    width: 127,
+    height: 85,
+  },
+  authTitleBlock: {
+    position: 'absolute',
+    left: 36,
+    right: 36,
+    top: 210,
+    alignItems: 'center',
+  },
+  authTitle: {
+    color: '#030303',
+    fontSize: 24,
+    lineHeight: 34,
+    fontWeight: '900',
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
+  authSubtitle: {
+    marginTop: 10,
+    width: 300,
+    color: '#9f9f9f',
+    fontSize: 13,
+    lineHeight: 19,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
+  authForm: {
+    position: 'absolute',
+    left: 29,
+    top: 348,
+    width: 343,
+    gap: 12,
+  },
+  authInputGroup: {
+    width: 343,
+    height: 68,
+  },
+  authInputLabel: {
+    color: '#5a5959',
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: '700',
+    letterSpacing: 0,
+  },
+  authInput: {
+    marginTop: 5,
+    width: 343,
+    height: 45,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(129,129,129,0.22)',
+    backgroundColor: '#fff',
+    paddingHorizontal: 15,
+    color: '#141517',
+    fontSize: 14,
+    fontWeight: '500',
+    letterSpacing: 0,
+  },
+  authForgotText: {
+    position: 'absolute',
+    right: 29,
+    top: 506,
+    color: '#ab81ff',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0,
+  },
+  authPrimaryButton: {
+    position: 'absolute',
+    left: 29,
+    top: 705,
+    width: 343,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: '#2d3440',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authSwitchButton: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 768,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  authSwitchText: {
+    color: '#9f9f9f',
+    fontSize: 14,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
+  authSwitchAccent: {
+    color: '#ab81ff',
+    fontWeight: '800',
   },
   receivedHeroPuzzleWrap: {
     position: 'absolute',
