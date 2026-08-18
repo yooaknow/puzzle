@@ -1,5 +1,9 @@
 export const SHARE_PUZZLE_KEY = 'puzzlw:sharedPuzzleUri';
 export const SHARE_PUZZLE_PREFIX = 'puzzlw:sharedPuzzleUri:';
+export const SHARE_PUZZLE_SOURCE_KEY = 'puzzlw:sharedPuzzleSourceUri';
+export const SHARE_PUZZLE_SOURCE_PREFIX = 'puzzlw:sharedPuzzleSourceUri:';
+export const SHARE_PUZZLE_GRID_SIZE_KEY = 'puzzlw:sharedPuzzleGridSize';
+export const SHARE_PUZZLE_GRID_SIZE_PREFIX = 'puzzlw:sharedPuzzleGridSize:';
 
 export const DESIGN_WIDTH = 390;
 export const DESIGN_HEIGHT = 844;
@@ -69,11 +73,15 @@ export type WebCanvasContext = {
   arc: (x: number, y: number, radius: number, startAngle: number, endAngle: number) => void;
   clearRect: (x: number, y: number, width: number, height: number) => void;
   fillRect: (x: number, y: number, width: number, height: number) => void;
+  fillText: (text: string, x: number, y: number) => void;
   lineWidth: number;
   strokeStyle: string;
   fillStyle: string;
   lineJoin: string;
   lineCap: string;
+  font: string;
+  textAlign: string;
+  textBaseline: string;
 };
 
 export type WebCanvas = {

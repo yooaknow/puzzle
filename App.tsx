@@ -59,11 +59,15 @@ import {
 import {
   createDrawingOverlay,
   createEmptyPuzzleBoard,
+  createPuzzleArtworkImage,
   createPuzzleImage,
   createPuzzlePieces,
   createSharedPuzzleId,
   getShareUrl,
   getSharedPuzzleId,
+  getPuzzlePieceMargin,
+  getStoredPuzzleGridSize,
+  getStoredPuzzleSourceUri,
   getStoredPuzzleUri,
   isSharedLink,
   saveStoredPuzzleUri,
@@ -76,6 +80,8 @@ export default function App() {
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [completedPuzzleUri, setCompletedPuzzleUri] = useState<string | null>(null);
+  const [completedPuzzleSourceUri, setCompletedPuzzleSourceUri] = useState<string | null>(null);
+  const [completedGridSize, setCompletedGridSize] = useState<GridSize>(3);
   const [solvedPuzzleUri, setSolvedPuzzleUri] = useState<string | null>(null);
   const [completedStrokes, setCompletedStrokes] = useState<DrawStroke[]>([]);
   const [completedTextStickers, setCompletedTextStickers] = useState<TextSticker[]>([]);
@@ -168,8 +174,10 @@ export default function App() {
           <PuzzleDecorateScreen
             photoUri={selectedPhotoUri}
             onBack={goBack}
-            onComplete={(puzzleUri, strokes, textStickers) => {
+            onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
               setCompletedPuzzleUri(puzzleUri);
+              setCompletedPuzzleSourceUri(puzzleSourceUri);
+              setCompletedGridSize(nextGridSize);
               setCompletedStrokes(strokes);
               setCompletedTextStickers(textStickers);
               setScreen('complete');
@@ -177,11 +185,20 @@ export default function App() {
           />
         )}
         {screen === 'complete' && completedPuzzleUri && (
-          <PuzzleCompleteScreen puzzleUri={completedPuzzleUri} strokes={completedStrokes} textStickers={completedTextStickers} onBack={goBack} />
+          <PuzzleCompleteScreen
+            puzzleUri={completedPuzzleUri}
+            puzzleSourceUri={completedPuzzleSourceUri ?? completedPuzzleUri}
+            gridSize={completedGridSize}
+            strokes={completedStrokes}
+            textStickers={completedTextStickers}
+            onBack={goBack}
+          />
         )}
         {screen === 'solve' && (
           <PuzzleSolveScreen
             puzzleUri={completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
+            puzzleSourceUri={completedPuzzleSourceUri ?? getStoredPuzzleSourceUri(getSharedPuzzleId()) ?? completedPuzzleUri ?? getStoredPuzzleUri(getSharedPuzzleId()) ?? solveSamplePuzzle}
+            gridSize={completedPuzzleUri ? completedGridSize : getStoredPuzzleGridSize(getSharedPuzzleId())}
             screenScale={scale}
             screenOffsetX={(width - DESIGN_WIDTH * scale) / 2}
             screenOffsetY={(height - DESIGN_HEIGHT * scale) / 2}
@@ -359,7 +376,7 @@ function PuzzleDecorateScreen({
 }: {
   photoUri: string;
   onBack: () => void;
-  onComplete: (puzzleUri: string, strokes: DrawStroke[], textStickers: TextSticker[]) => void;
+  onComplete: (puzzleUri: string, puzzleSourceUri: string, gridSize: GridSize, strokes: DrawStroke[], textStickers: TextSticker[]) => void;
 }) {
   const [tool, setTool] = useState<'draw' | 'text'>('draw');
   const [gridSize, setGridSize] = useState<GridSize>(3);
@@ -562,7 +579,13 @@ function PuzzleDecorateScreen({
         <Image source={{ uri: trashIconAsset }} style={styles.trashIcon} resizeMode="contain" />
       </Pressable>
 
-      <Pressable onPress={() => onComplete(puzzleUri, strokes, textStickers)} style={({ pressed }) => [styles.completeButton, pressed && styles.pressed]}>
+      <Pressable
+        onPress={async () => {
+          const puzzleSourceUri = await createPuzzleArtworkImage(photoUri, strokes, textStickers);
+          onComplete(puzzleUri, puzzleSourceUri, gridSize, strokes, textStickers);
+        }}
+        style={({ pressed }) => [styles.completeButton, pressed && styles.pressed]}
+      >
         <Text style={styles.primaryText}>퍼즐 완성</Text>
       </Pressable>
     </View>
@@ -571,11 +594,15 @@ function PuzzleDecorateScreen({
 
 function PuzzleCompleteScreen({
   puzzleUri,
+  puzzleSourceUri,
+  gridSize,
   strokes,
   textStickers,
   onBack,
 }: {
   puzzleUri: string;
+  puzzleSourceUri: string;
+  gridSize: GridSize;
   strokes: DrawStroke[];
   textStickers: TextSticker[];
   onBack: () => void;
@@ -585,8 +612,8 @@ function PuzzleCompleteScreen({
   const shareUrl = useMemo(() => getShareUrl(sharePuzzleId), [sharePuzzleId]);
 
   useEffect(() => {
-    saveStoredPuzzleUri(puzzleUri, sharePuzzleId);
-  }, [puzzleUri, sharePuzzleId]);
+    saveStoredPuzzleUri(puzzleUri, sharePuzzleId, puzzleSourceUri, gridSize);
+  }, [puzzleUri, puzzleSourceUri, gridSize, sharePuzzleId]);
 
   const sharePuzzle = async () => {
     const title = '퍼즐이 완성됐어요!';
@@ -660,6 +687,8 @@ function PuzzleCompleteScreen({
 
 function PuzzleSolveScreen({
   puzzleUri,
+  puzzleSourceUri,
+  gridSize,
   screenScale,
   screenOffsetX,
   screenOffsetY,
@@ -667,31 +696,45 @@ function PuzzleSolveScreen({
   onComplete,
 }: {
   puzzleUri: string;
+  puzzleSourceUri: string;
+  gridSize: GridSize;
   screenScale: number;
   screenOffsetX: number;
   screenOffsetY: number;
   onBack: () => void;
   onComplete: (puzzleUri: string) => void;
 }) {
+  const totalPieces = gridSize * gridSize;
+  const boardSize = 302;
+  const slotSize = boardSize / gridSize;
+  const pieceMargin = getPuzzlePieceMargin(slotSize);
+  const placedPieceSize = slotSize + pieceMargin * 2;
+  const trayPieceSize = gridSize === 3 ? 128 : gridSize === 4 ? 104 : 86;
   const [pieceUris, setPieceUris] = useState<string[]>([]);
-  const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(9).fill(null));
+  const [placedPieces, setPlacedPieces] = useState<Array<number | null>>(Array(totalPieces).fill(null));
   const [selectedPiece, setSelectedPiece] = useState<number | null>(null);
   const [draggingPiece, setDraggingPiece] = useState<{ pieceIndex: number; x: number; y: number } | null>(null);
   const draggingPieceRef = useRef<{ pieceIndex: number; x: number; y: number } | null>(null);
   const [trayPage, setTrayPage] = useState(0);
   const placedCount = placedPieces.filter((piece) => piece !== null).length;
-  const isSolved = placedCount === 9;
+  const isSolved = placedCount === totalPieces;
   const availablePieces = pieceUris.map((_, index) => index).filter((index) => !placedPieces.includes(index));
   const trayPageCount = Math.max(1, Math.ceil(availablePieces.length / 2));
   const visiblePieces = availablePieces.slice(trayPage * 2, trayPage * 2 + 2);
-  const emptyBoardUri = useMemo(() => createEmptyPuzzleBoard(), []);
+  const emptyBoardUri = useMemo(() => createEmptyPuzzleBoard(boardSize, gridSize), [gridSize]);
+  const slotStyle = useMemo<StyleProp<ViewStyle>>(() => ({ width: slotSize, height: slotSize }), [slotSize]);
+  const placedPieceStyle = useMemo<StyleProp<ImageStyle>>(
+    () => ({ left: -pieceMargin, top: -pieceMargin, width: placedPieceSize, height: placedPieceSize }),
+    [pieceMargin, placedPieceSize],
+  );
+  const trayPieceStyle = useMemo<StyleProp<ViewStyle>>(() => ({ width: trayPieceSize, height: trayPieceSize }), [trayPieceSize]);
 
   useEffect(() => {
     let isMounted = true;
-    createPuzzlePieces(puzzleUri).then((pieces) => {
+    createPuzzlePieces(puzzleSourceUri, gridSize).then((pieces) => {
       if (isMounted) {
         setPieceUris(pieces);
-        setPlacedPieces(Array(9).fill(null));
+        setPlacedPieces(Array(totalPieces).fill(null));
         setSelectedPiece(null);
         setDraggingPiece(null);
         draggingPieceRef.current = null;
@@ -702,7 +745,7 @@ function PuzzleSolveScreen({
     return () => {
       isMounted = false;
     };
-  }, [puzzleUri]);
+  }, [puzzleSourceUri, gridSize, totalPieces]);
 
   useEffect(() => {
     setTrayPage((current) => Math.min(current, trayPageCount - 1));
@@ -720,16 +763,15 @@ function PuzzleSolveScreen({
     const point = getDesignPoint(event);
     const boardLeft = 44;
     const boardTop = 187;
-    const boardSize = 302;
-    const slotSize = boardSize / 3;
+    const slotSize = boardSize / gridSize;
 
     if (point.x < boardLeft || point.x > boardLeft + boardSize || point.y < boardTop || point.y > boardTop + boardSize) {
       return null;
     }
 
-    const col = Math.min(2, Math.floor((point.x - boardLeft) / slotSize));
-    const row = Math.min(2, Math.floor((point.y - boardTop) / slotSize));
-    return row * 3 + col;
+    const col = Math.min(gridSize - 1, Math.floor((point.x - boardLeft) / slotSize));
+    const row = Math.min(gridSize - 1, Math.floor((point.y - boardTop) / slotSize));
+    return row * gridSize + col;
   };
 
   const startDraggingPiece = (pieceIndex: number, event: GestureResponderEvent) => {
@@ -782,28 +824,22 @@ function PuzzleSolveScreen({
         <Image source={{ uri: puzzleBadgeIconAsset }} style={styles.solveCounterIcon} resizeMode="contain" />
         <Text style={styles.solveCounterText}>
           <Text style={styles.solveCounterDone}>{placedCount}</Text>
-          <Text style={styles.solveCounterTotal}>/9</Text>
+          <Text style={styles.solveCounterTotal}>/{totalPieces}</Text>
         </Text>
       </View>
 
-      <View style={[styles.solveBoard, isSolved && styles.solvedBoard]}>
-        {isSolved ? (
-          <Image source={{ uri: puzzleUri }} style={styles.solvedPuzzleImage} resizeMode="cover" />
-        ) : (
-          <>
-            <Image source={{ uri: emptyBoardUri }} style={styles.emptySolveBoardImage} resizeMode="cover" />
-            {Array.from({ length: 9 }).map((_, index) => {
-              const placedPiece = placedPieces[index];
-              return (
-                <View key={index} style={styles.solveSlot}>
-                  {placedPiece !== null && pieceUris[placedPiece] ? (
-                    <Image source={{ uri: pieceUris[placedPiece] }} style={styles.solvePlacedPiece} resizeMode="cover" />
-                  ) : null}
-                </View>
-              );
-            })}
-          </>
-        )}
+      <View style={styles.solveBoard}>
+        <Image source={{ uri: emptyBoardUri }} style={styles.emptySolveBoardImage} resizeMode="cover" />
+        {Array.from({ length: totalPieces }).map((_, index) => {
+          const placedPiece = placedPieces[index];
+          return (
+            <View key={index} style={[styles.solveSlot, slotStyle]}>
+              {placedPiece !== null && pieceUris[placedPiece] ? (
+                <Image source={{ uri: pieceUris[placedPiece] }} style={[styles.solvePlacedPiece, placedPieceStyle]} resizeMode="cover" />
+              ) : null}
+            </View>
+          );
+        })}
       </View>
 
       <View style={styles.solveTray}>
@@ -831,7 +867,7 @@ function PuzzleSolveScreen({
                   draggingPieceRef.current = null;
                   setDraggingPiece(null);
                 }}
-                style={[styles.solvePieceButton, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
+                style={[styles.solvePieceButton, trayPieceStyle, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
               >
                 <Image source={{ uri: pieceUris[pieceIndex] ?? solveSamplePieces }} style={styles.solvePieceImage} resizeMode="cover" />
               </View>
@@ -853,9 +889,9 @@ function PuzzleSolveScreen({
 
       <View style={styles.solveBottomSheet}>
         <Pressable
-          disabled={placedCount < 9}
+          disabled={placedCount < totalPieces}
           onPress={() => onComplete(puzzleUri)}
-          style={({ pressed }) => [styles.solveCompleteButton, placedCount < 9 && styles.disabledButton, pressed && placedCount === 9 && styles.pressed]}
+          style={({ pressed }) => [styles.solveCompleteButton, placedCount < totalPieces && styles.disabledButton, pressed && placedCount === totalPieces && styles.pressed]}
         >
           <Text style={styles.primaryText}>퍼즐 완성하기</Text>
         </Pressable>
@@ -864,7 +900,10 @@ function PuzzleSolveScreen({
       {draggingPiece && pieceUris[draggingPiece.pieceIndex] ? (
         <Image
           source={{ uri: pieceUris[draggingPiece.pieceIndex] }}
-          style={[styles.draggingSolvePiece, { left: draggingPiece.x - 63, top: draggingPiece.y - 63 }]}
+          style={[
+            styles.draggingSolvePiece,
+            { left: draggingPiece.x - trayPieceSize / 2, top: draggingPiece.y - trayPieceSize / 2, width: trayPieceSize, height: trayPieceSize },
+          ]}
           resizeMode="cover"
         />
       ) : null}
@@ -1559,7 +1598,7 @@ const styles = StyleSheet.create({
     top: 187,
     width: 302,
     height: 302,
-    borderRadius: 10,
+    borderRadius: 0,
     overflow: 'hidden',
     backgroundColor: '#fff',
     flexDirection: 'row',
@@ -1576,16 +1615,6 @@ const styles = StyleSheet.create({
     width: 302,
     height: 302,
   },
-  solvedBoard: {
-    left: 26,
-    top: 178,
-    width: 337,
-    height: 305,
-  },
-  solvedPuzzleImage: {
-    width: '100%',
-    height: '100%',
-  },
   solveSlot: {
     width: 100.67,
     height: 100.67,
@@ -1593,10 +1622,10 @@ const styles = StyleSheet.create({
   },
   solvePlacedPiece: {
     position: 'absolute',
-    left: -13,
-    top: -13,
-    width: 126,
-    height: 126,
+    left: -14,
+    top: -14,
+    width: 128,
+    height: 128,
   },
   solveTray: {
     position: 'absolute',
@@ -1621,8 +1650,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
   },
   solvePieceButton: {
-    width: 126,
-    height: 126,
+    width: 128,
+    height: 128,
     borderRadius: 12,
   },
   selectedSolvePiece: {
@@ -1631,8 +1660,8 @@ const styles = StyleSheet.create({
   },
   draggingSolvePiece: {
     position: 'absolute',
-    width: 126,
-    height: 126,
+    width: 128,
+    height: 128,
     borderRadius: 12,
     zIndex: 60,
     opacity: 0.94,

@@ -1,8 +1,13 @@
 import {
   SHARE_PUZZLE_KEY,
   SHARE_PUZZLE_PREFIX,
+  SHARE_PUZZLE_GRID_SIZE_KEY,
+  SHARE_PUZZLE_GRID_SIZE_PREFIX,
+  SHARE_PUZZLE_SOURCE_KEY,
+  SHARE_PUZZLE_SOURCE_PREFIX,
   DrawStroke,
   GridSize,
+  TextSticker,
   WebCanvasContext,
   WebCanvasDocument,
   WebImageConstructor,
@@ -34,14 +39,9 @@ export function createPuzzleImage(photoUri: string, gridSize: GridSize): Promise
 
       const naturalWidth = image.naturalWidth || image.width;
       const naturalHeight = image.naturalHeight || image.height;
-      const scale = Math.max(330 / naturalWidth, 330 / naturalHeight);
-      const drawWidth = naturalWidth * scale;
-      const drawHeight = naturalHeight * scale;
-      const drawX = (330 - drawWidth) / 2;
-      const drawY = (330 - drawHeight) / 2;
 
       context.clearRect(0, 0, 330, 330);
-      context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+      drawCroppedImage(context, image, naturalWidth, naturalHeight, 330);
       drawPuzzleCutLines(context, gridSize);
 
       resolve(canvas.toDataURL('image/png'));
@@ -51,12 +51,50 @@ export function createPuzzleImage(photoUri: string, gridSize: GridSize): Promise
   });
 }
 
-export function createPuzzlePieces(photoUri: string): Promise<string[]> {
+export function createPuzzleArtworkImage(photoUri: string, strokes: DrawStroke[], textStickers: TextSticker[]): Promise<string> {
   const webDocument = (globalThis as unknown as { document?: WebCanvasDocument }).document;
   const WebImage = (globalThis as unknown as { Image?: WebImageConstructor }).Image;
 
   if (!webDocument || !WebImage) {
-    return Promise.resolve(Array(9).fill(photoUri));
+    return Promise.resolve(photoUri);
+  }
+
+  return new Promise((resolve) => {
+    const image = new WebImage();
+    image.crossOrigin = 'anonymous';
+    image.onload = () => {
+      const canvas = webDocument.createElement('canvas');
+      canvas.width = 330;
+      canvas.height = 330;
+      const context = canvas.getContext('2d');
+
+      if (!context) {
+        resolve(photoUri);
+        return;
+      }
+
+      const naturalWidth = image.naturalWidth || image.width;
+      const naturalHeight = image.naturalHeight || image.height;
+
+      context.clearRect(0, 0, 330, 330);
+      drawCroppedImage(context, image, naturalWidth, naturalHeight, 330);
+      drawStrokes(context, strokes);
+      drawTextStickers(context, textStickers);
+
+      resolve(canvas.toDataURL('image/png'));
+    };
+    image.onerror = () => resolve(photoUri);
+    image.src = photoUri;
+  });
+}
+
+export function createPuzzlePieces(photoUri: string, gridSize: GridSize = 3): Promise<string[]> {
+  const webDocument = (globalThis as unknown as { document?: WebCanvasDocument }).document;
+  const WebImage = (globalThis as unknown as { Image?: WebImageConstructor }).Image;
+  const pieceCount = gridSize * gridSize;
+
+  if (!webDocument || !WebImage) {
+    return Promise.resolve(Array(pieceCount).fill(photoUri));
   }
 
   return new Promise((resolve) => {
@@ -68,15 +106,15 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
       const sourceSize = Math.min(naturalWidth, naturalHeight);
       const sourceX = (naturalWidth - sourceSize) / 2;
       const sourceY = (naturalHeight - sourceSize) / 2;
-      const cropSize = sourceSize / 3;
-      const cellSize = 100;
-      const margin = 13;
+      const cropSize = sourceSize / gridSize;
+      const cellSize = 302 / gridSize;
+      const margin = getPuzzlePieceMargin(cellSize);
       const pieceCanvasSize = cellSize + margin * 2;
       const sourceMargin = cropSize * (margin / cellSize);
       const pieces: string[] = [];
 
-      for (let row = 0; row < 3; row += 1) {
-        for (let col = 0; col < 3; col += 1) {
+      for (let row = 0; row < gridSize; row += 1) {
+        for (let col = 0; col < gridSize; col += 1) {
           const canvas = webDocument.createElement('canvas');
           canvas.width = pieceCanvasSize;
           canvas.height = pieceCanvasSize;
@@ -89,7 +127,7 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
 
           context.clearRect(0, 0, pieceCanvasSize, pieceCanvasSize);
           context.save();
-          drawPuzzlePiecePath(context, row, col, cellSize, margin);
+          drawPuzzlePiecePath(context, row, col, gridSize, cellSize, margin);
           context.clip();
           context.drawImage(
             image,
@@ -103,9 +141,9 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
             pieceCanvasSize,
           );
           context.restore();
-          drawPuzzlePiecePath(context, row, col, cellSize, margin);
-          context.lineWidth = 1.2;
-          context.strokeStyle = 'rgba(42,42,42,0.42)';
+          drawPuzzlePiecePath(context, row, col, gridSize, cellSize, margin);
+          context.lineWidth = 1;
+          context.strokeStyle = 'rgba(42, 42, 42, 0.34)';
           context.lineJoin = 'round';
           context.lineCap = 'round';
           context.stroke();
@@ -115,7 +153,7 @@ export function createPuzzlePieces(photoUri: string): Promise<string[]> {
 
       resolve(pieces);
     };
-    image.onerror = () => resolve(Array(9).fill(solveSamplePieces));
+    image.onerror = () => resolve(Array(pieceCount).fill(solveSamplePieces));
     image.src = photoUri;
   });
 }
@@ -168,25 +206,7 @@ export function createDrawingOverlay(strokes: DrawStroke[]) {
       return;
     }
 
-    context.beginPath();
-    context.lineWidth = stroke.width;
-    context.strokeStyle = stroke.color;
-    context.fillStyle = stroke.color;
-    context.lineCap = 'round';
-    context.lineJoin = 'round';
-    context.moveTo(firstPoint.x, firstPoint.y);
-
-    restPoints.forEach((point) => {
-      context.lineTo(point.x, point.y);
-    });
-
-    context.stroke();
-
-    if (restPoints.length === 0) {
-      context.beginPath();
-      context.arc(firstPoint.x, firstPoint.y, stroke.width / 2, 0, Math.PI * 2);
-      context.fill();
-    }
+    drawStroke(context, stroke, firstPoint, restPoints);
   });
 
   return canvas.toDataURL('image/png');
@@ -215,15 +235,45 @@ export function getSharedPuzzleId() {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-export function saveStoredPuzzleUri(puzzleUri: string, puzzleId?: string) {
+export function saveStoredPuzzleUri(puzzleUri: string, puzzleId?: string, puzzleSourceUri?: string, gridSize: GridSize = 3) {
   try {
     const storage = getStorage();
+    storage?.setItem(SHARE_PUZZLE_GRID_SIZE_KEY, String(gridSize));
+    if (puzzleId) {
+      storage?.setItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`, String(gridSize));
+    }
     storage?.setItem(SHARE_PUZZLE_KEY, puzzleUri);
+    storage?.setItem(SHARE_PUZZLE_SOURCE_KEY, puzzleSourceUri ?? puzzleUri);
     if (puzzleId) {
       storage?.setItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`, puzzleUri);
+      storage?.setItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`, puzzleSourceUri ?? puzzleUri);
     }
   } catch {
     // Local storage can fail for large data URLs; sharing still falls back to the sample puzzle.
+  }
+}
+
+export function getStoredPuzzleGridSize(puzzleId?: string | null): GridSize {
+  try {
+    const storage = getStorage();
+    const storedValue = puzzleId
+      ? storage?.getItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`) ?? storage?.getItem(SHARE_PUZZLE_GRID_SIZE_KEY)
+      : storage?.getItem(SHARE_PUZZLE_GRID_SIZE_KEY);
+    return parseGridSize(storedValue);
+  } catch {
+    return 3;
+  }
+}
+
+export function getStoredPuzzleSourceUri(puzzleId?: string | null) {
+  try {
+    const storage = getStorage();
+    if (puzzleId) {
+      return storage?.getItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`) ?? storage?.getItem(SHARE_PUZZLE_SOURCE_KEY) ?? null;
+    }
+    return storage?.getItem(SHARE_PUZZLE_SOURCE_KEY) ?? null;
+  } catch {
+    return null;
   }
 }
 
@@ -252,7 +302,66 @@ function getStorage() {
   return (globalThis as unknown as { localStorage?: WebStorage }).localStorage;
 }
 
-function drawPuzzlePiecePath(context: WebCanvasContext, row: number, col: number, size: number, margin: number) {
+function drawCroppedImage(context: WebCanvasContext, image: Parameters<WebCanvasContext['drawImage']>[0], naturalWidth: number, naturalHeight: number, canvasSize: number) {
+  const scale = Math.max(canvasSize / naturalWidth, canvasSize / naturalHeight);
+  const drawWidth = naturalWidth * scale;
+  const drawHeight = naturalHeight * scale;
+  const drawX = (canvasSize - drawWidth) / 2;
+  const drawY = (canvasSize - drawHeight) / 2;
+  context.drawImage(image, drawX, drawY, drawWidth, drawHeight);
+}
+
+function drawStrokes(context: WebCanvasContext, strokes: DrawStroke[]) {
+  strokes.forEach((stroke) => {
+    const [firstPoint, ...restPoints] = stroke.points;
+    if (firstPoint) {
+      drawStroke(context, stroke, firstPoint, restPoints);
+    }
+  });
+}
+
+function drawStroke(context: WebCanvasContext, stroke: DrawStroke, firstPoint: DrawStroke['points'][number], restPoints: DrawStroke['points']) {
+  context.beginPath();
+  context.lineWidth = stroke.width;
+  context.strokeStyle = stroke.color;
+  context.fillStyle = stroke.color;
+  context.lineCap = 'round';
+  context.lineJoin = 'round';
+  context.moveTo(firstPoint.x, firstPoint.y);
+
+  restPoints.forEach((point) => {
+    context.lineTo(point.x, point.y);
+  });
+
+  context.stroke();
+
+  if (restPoints.length === 0) {
+    context.beginPath();
+    context.arc(firstPoint.x, firstPoint.y, stroke.width / 2, 0, Math.PI * 2);
+    context.fill();
+  }
+}
+
+function drawTextStickers(context: WebCanvasContext, textStickers: TextSticker[]) {
+  context.font = '700 19px sans-serif';
+  context.textAlign = 'left';
+  context.textBaseline = 'middle';
+
+  textStickers.forEach((sticker) => {
+    context.fillStyle = sticker.color;
+    context.fillText(sticker.text, sticker.x - 70, sticker.y);
+  });
+}
+
+function parseGridSize(value?: string | null): GridSize {
+  return value === '4' || value === '5' ? Number(value) as GridSize : 3;
+}
+
+export function getPuzzlePieceMargin(cellSize: number) {
+  return Math.max(24, Math.min(42, cellSize * 0.42));
+}
+
+function drawPuzzlePiecePath(context: WebCanvasContext, row: number, col: number, gridSize: GridSize, size: number, margin: number) {
   const x = margin;
   const y = margin;
 
@@ -262,91 +371,46 @@ function drawPuzzlePiecePath(context: WebCanvasContext, row: number, col: number
   if (row === 0) {
     context.lineTo(x + size, y);
   } else {
-    drawHorizontalPieceEdge(context, x, y, size, getHorizontalTab(row - 1, col), false);
+    drawPointEdge(context, getHorizontalEdgePoints(row - 1, col, x, y, size), false);
   }
 
-  if (col === 2) {
+  if (col === gridSize - 1) {
     context.lineTo(x + size, y + size);
   } else {
-    drawVerticalPieceEdge(context, x + size, y, size, getVerticalTab(row, col), false);
+    drawPointEdge(context, getVerticalEdgePoints(row, col, x + size, y, size), false);
   }
 
-  if (row === 2) {
+  if (row === gridSize - 1) {
     context.lineTo(x, y + size);
   } else {
-    drawHorizontalPieceEdge(context, x, y + size, size, getHorizontalTab(row, col), true);
+    drawPointEdge(context, getHorizontalEdgePoints(row, col, x, y + size, size), true);
   }
 
   if (col === 0) {
     context.lineTo(x, y);
   } else {
-    drawVerticalPieceEdge(context, x, y, size, getVerticalTab(row, col - 1), true);
+    drawPointEdge(context, getVerticalEdgePoints(row, col - 1, x, y, size), true);
   }
 
   context.closePath();
 }
 
-function drawHorizontalPieceEdge(context: WebCanvasContext, x: number, y: number, size: number, tab: number, reverse: boolean) {
-  const neckIn = size * 0.34;
-  const neckOut = size * 0.42;
-  const crestIn = size * 0.47;
-  const crestOut = size * 0.53;
-  const returnIn = size * 0.58;
-  const returnOut = size * 0.66;
-  const depth = Math.min(14, size * 0.16);
-  const shoulder = tab * depth * 0.45;
-  const crest = tab * depth;
-
-  if (!reverse) {
-    context.lineTo(x + neckIn, y);
-    context.bezierCurveTo(x + neckOut, y, x + neckOut, y + shoulder, x + crestIn, y + shoulder);
-    context.bezierCurveTo(x + crestIn, y + crest, x + crestOut, y + crest, x + crestOut, y + shoulder);
-    context.bezierCurveTo(x + returnIn, y + shoulder, x + returnIn, y, x + returnOut, y);
-    context.lineTo(x + size, y);
-    return;
-  }
-
-  context.lineTo(x + returnOut, y);
-  context.bezierCurveTo(x + returnIn, y, x + returnIn, y + shoulder, x + crestOut, y + shoulder);
-  context.bezierCurveTo(x + crestOut, y + crest, x + crestIn, y + crest, x + crestIn, y + shoulder);
-  context.bezierCurveTo(x + neckOut, y + shoulder, x + neckOut, y, x + neckIn, y);
-  context.lineTo(x, y);
-}
-
-function drawVerticalPieceEdge(context: WebCanvasContext, x: number, y: number, size: number, tab: number, reverse: boolean) {
-  const neckIn = size * 0.34;
-  const neckOut = size * 0.42;
-  const crestIn = size * 0.47;
-  const crestOut = size * 0.53;
-  const returnIn = size * 0.58;
-  const returnOut = size * 0.66;
-  const depth = Math.min(14, size * 0.16);
-  const shoulder = tab * depth * 0.45;
-  const crest = tab * depth;
-
-  if (!reverse) {
-    context.lineTo(x, y + neckIn);
-    context.bezierCurveTo(x, y + neckOut, x + shoulder, y + neckOut, x + shoulder, y + crestIn);
-    context.bezierCurveTo(x + crest, y + crestIn, x + crest, y + crestOut, x + shoulder, y + crestOut);
-    context.bezierCurveTo(x + shoulder, y + returnIn, x, y + returnIn, x, y + returnOut);
-    context.lineTo(x, y + size);
-    return;
-  }
-
-  context.lineTo(x, y + returnOut);
-  context.bezierCurveTo(x, y + returnIn, x + shoulder, y + returnIn, x + shoulder, y + crestOut);
-  context.bezierCurveTo(x + crest, y + crestOut, x + crest, y + crestIn, x + shoulder, y + crestIn);
-  context.bezierCurveTo(x + shoulder, y + neckOut, x, y + neckOut, x, y + neckIn);
-  context.lineTo(x, y);
-}
+type EdgeProfile = {
+  flip: number;
+  leadIn: number;
+  tabOffset: number;
+  neckOffset: number;
+  exitBend: number;
+  leadOut: number;
+};
 
 function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize, canvasSize = 330) {
-  const inset = canvasSize === 330 ? 5 : 1;
+  const inset = canvasSize / 302;
   const extent = canvasSize - inset * 2;
   const size = extent / gridSize;
 
-  context.lineWidth = canvasSize === 330 ? 1.35 : 1.1;
-  context.strokeStyle = canvasSize === 330 ? 'rgba(42,42,42,0.42)' : 'rgba(42,42,42,0.18)';
+  context.lineWidth = canvasSize === 330 ? 1.25 : 1.1;
+  context.strokeStyle = canvasSize === 330 ? 'rgba(42,42,42,0.38)' : 'rgba(42,42,42,0.18)';
   context.lineJoin = 'round';
   context.lineCap = 'round';
 
@@ -363,7 +427,7 @@ function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize, canva
     context.beginPath();
     context.moveTo(x, inset);
     for (let row = 0; row < gridSize; row += 1) {
-      drawVerticalCutSegment(context, x, inset + row * size, size, getVerticalTab(row, col - 1));
+      drawPointEdge(context, getVerticalEdgePoints(row, col - 1, x, inset + row * size, size), false);
     }
     context.stroke();
   }
@@ -373,52 +437,106 @@ function drawPuzzleCutLines(context: WebCanvasContext, gridSize: GridSize, canva
     context.beginPath();
     context.moveTo(inset, y);
     for (let col = 0; col < gridSize; col += 1) {
-      drawHorizontalCutSegment(context, inset + col * size, y, size, getHorizontalTab(row - 1, col));
+      drawPointEdge(context, getHorizontalEdgePoints(row - 1, col, inset + col * size, y, size), false);
     }
     context.stroke();
   }
 }
 
-function drawVerticalCutSegment(context: WebCanvasContext, x: number, y: number, size: number, tab: number) {
-  const neckIn = size * 0.34;
-  const neckOut = size * 0.42;
-  const crestIn = size * 0.47;
-  const crestOut = size * 0.53;
-  const returnIn = size * 0.58;
-  const returnOut = size * 0.66;
-  const depth = Math.min(14, size * 0.16);
-  const shoulder = tab * depth * 0.45;
-  const crest = tab * depth;
+type Point = { x: number; y: number };
 
-  context.lineTo(x, y + neckIn);
-  context.bezierCurveTo(x, y + neckOut, x + shoulder, y + neckOut, x + shoulder, y + crestIn);
-  context.bezierCurveTo(x + crest, y + crestIn, x + crest, y + crestOut, x + shoulder, y + crestOut);
-  context.bezierCurveTo(x + shoulder, y + returnIn, x, y + returnIn, x, y + returnOut);
-  context.lineTo(x, y + size);
+function drawPointEdge(context: WebCanvasContext, points: Point[], reverse: boolean) {
+  const edgePoints = reverse ? [...points].reverse() : points;
+
+  edgePoints.slice(1).forEach((point) => {
+    context.lineTo(point.x, point.y);
+  });
 }
 
-function drawHorizontalCutSegment(context: WebCanvasContext, x: number, y: number, size: number, tab: number) {
-  const neckIn = size * 0.34;
-  const neckOut = size * 0.42;
-  const crestIn = size * 0.47;
-  const crestOut = size * 0.53;
-  const returnIn = size * 0.58;
-  const returnOut = size * 0.66;
-  const depth = Math.min(14, size * 0.16);
-  const shoulder = tab * depth * 0.45;
-  const crest = tab * depth;
+function getHorizontalEdgePoints(row: number, col: number, x: number, y: number, size: number) {
+  const profile = getEdgeProfile(row, col, 31);
+  const tabSize = 0.125;
+  const l = (ratio: number) => x + size * ratio;
+  const w = (ratio: number) => y + size * ratio * profile.flip;
 
-  context.lineTo(x + neckIn, y);
-  context.bezierCurveTo(x + neckOut, y, x + neckOut, y + shoulder, x + crestIn, y + shoulder);
-  context.bezierCurveTo(x + crestIn, y + crest, x + crestOut, y + crest, x + crestOut, y + shoulder);
-  context.bezierCurveTo(x + returnIn, y + shoulder, x + returnIn, y, x + returnOut, y);
-  context.lineTo(x + size, y);
+  return sampleCubicEdge([
+    { x, y },
+    { x: l(0.2), y: w(profile.leadIn) },
+    { x: l(0.5 + profile.tabOffset + profile.exitBend), y: w(-tabSize + profile.neckOffset) },
+    { x: l(0.5 - tabSize + profile.tabOffset), y: w(tabSize + profile.neckOffset) },
+    { x: l(0.5 - 2 * tabSize + profile.tabOffset - profile.exitBend), y: w(3 * tabSize + profile.neckOffset) },
+    { x: l(0.5 + 2 * tabSize + profile.tabOffset - profile.exitBend), y: w(3 * tabSize + profile.neckOffset) },
+    { x: l(0.5 + tabSize + profile.tabOffset), y: w(tabSize + profile.neckOffset) },
+    { x: l(0.5 + profile.tabOffset + profile.exitBend), y: w(-tabSize + profile.neckOffset) },
+    { x: l(0.8), y: w(profile.leadOut) },
+    { x: x + size, y },
+  ]);
 }
 
-function getVerticalTab(row: number, col: number) {
-  return (row + col) % 2 === 0 ? 1 : -1;
+function getVerticalEdgePoints(row: number, col: number, x: number, y: number, size: number) {
+  const profile = getEdgeProfile(row, col, 17);
+  const tabSize = 0.125;
+  const l = (ratio: number) => y + size * ratio;
+  const w = (ratio: number) => x + size * ratio * profile.flip;
+
+  return sampleCubicEdge([
+    { x, y },
+    { x: w(profile.leadIn), y: l(0.2) },
+    { x: w(-tabSize + profile.neckOffset), y: l(0.5 + profile.tabOffset + profile.exitBend) },
+    { x: w(tabSize + profile.neckOffset), y: l(0.5 - tabSize + profile.tabOffset) },
+    { x: w(3 * tabSize + profile.neckOffset), y: l(0.5 - 2 * tabSize + profile.tabOffset - profile.exitBend) },
+    { x: w(3 * tabSize + profile.neckOffset), y: l(0.5 + 2 * tabSize + profile.tabOffset - profile.exitBend) },
+    { x: w(tabSize + profile.neckOffset), y: l(0.5 + tabSize + profile.tabOffset) },
+    { x: w(-tabSize + profile.neckOffset), y: l(0.5 + profile.tabOffset + profile.exitBend) },
+    { x: w(profile.leadOut), y: l(0.8) },
+    { x, y: y + size },
+  ]);
 }
 
-function getHorizontalTab(row: number, col: number) {
-  return (row + col) % 2 === 0 ? -1 : 1;
+function sampleCubicEdge(points: Point[]) {
+  const samples: Point[] = [points[0]];
+
+  for (let index = 1; index < points.length; index += 3) {
+    const start = points[index - 1];
+    const controlA = points[index];
+    const controlB = points[index + 1];
+    const end = points[index + 2];
+
+    for (let step = 1; step <= 12; step += 1) {
+      const t = step / 12;
+      const mt = 1 - t;
+      samples.push({
+        x: mt ** 3 * start.x + 3 * mt ** 2 * t * controlA.x + 3 * mt * t ** 2 * controlB.x + t ** 3 * end.x,
+        y: mt ** 3 * start.y + 3 * mt ** 2 * t * controlA.y + 3 * mt * t ** 2 * controlB.y + t ** 3 * end.y,
+      });
+    }
+  }
+
+  return samples;
+}
+
+function getEdgeProfile(row: number, col: number, salt: number): EdgeProfile {
+  return {
+    flip: seededUnit(row, col, salt) > 0.5 ? 1 : -1,
+    leadIn: seededRange(row, col, salt + 1, -0.02, 0.02),
+    tabOffset: seededRange(row, col, salt + 2, -0.035, 0.035),
+    neckOffset: seededRange(row, col, salt + 3, -0.02, 0.02),
+    exitBend: seededRange(row, col, salt + 4, -0.025, 0.025),
+    leadOut: seededRange(row, col, salt + 5, -0.02, 0.02),
+  };
+}
+
+function seededRange(row: number, col: number, salt: number, min: number, max: number) {
+  return min + seededUnit(row, col, salt) * (max - min);
+}
+
+function seededUnit(row: number, col: number, salt: number) {
+  return hashEdge(row, col, salt) / 0xffffffff;
+}
+
+function hashEdge(row: number, col: number, salt: number) {
+  let value = (row + 1) * 73856093 ^ (col + 1) * 19349663 ^ salt * 83492791;
+  value = Math.imul(value ^ (value >>> 16), 2246822507);
+  value = Math.imul(value ^ (value >>> 13), 3266489909);
+  return (value ^ (value >>> 16)) >>> 0;
 }
