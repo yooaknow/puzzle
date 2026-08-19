@@ -8,6 +8,7 @@ import {
   LayoutChangeEvent,
   Pressable,
   SafeAreaView,
+  ScrollView,
   Share,
   StyleProp,
   StyleSheet,
@@ -22,6 +23,11 @@ import {
   cardPhotoPuzzle,
   cardPuzzleSheet,
   celebrationAsset,
+  homeBannerArrowAsset,
+  homeBannerCharacterAsset,
+  homeBannerGradientAsset,
+  homeLockIconAsset,
+  homeLogoAsset,
   loginPuzzleAsset,
   photoBadgeIconAsset,
   puzzleBadgeIconAsset,
@@ -36,11 +42,15 @@ import {
   splashArm,
   splashPuzzleSheet,
   splashYellowPuzzle,
+  tabHomeIconAsset,
+  tabProfileIconAsset,
+  tabPuzzleIconAsset,
   trashIconAsset,
   undoIconAsset,
   uploadIcon,
   authPuzzleIconAsset,
 } from './src/assets';
+import { BODY_FONT_FAMILY, DISPLAY_FONT_FAMILY, loadWebFonts } from './src/fonts';
 import {
   DESIGN_HEIGHT,
   DESIGN_WIDTH,
@@ -146,6 +156,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    loadWebFonts();
+  }, []);
+
+  useEffect(() => {
     return () => {
       const webUrl = (globalThis as unknown as { URL?: WebUrl }).URL;
       if (webUrl) {
@@ -235,7 +249,18 @@ export default function App() {
             onSubmit={handleAuthSubmit}
           />
         )}
-        {screen === 'card' && <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />}
+        {screen === 'card' && (
+          currentAccount ? (
+            <HomeScreen
+              account={currentAccount}
+              sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
+              receivedPuzzleUri={storedPuzzleUri}
+              onCreatePuzzle={openPhotoPicker}
+            />
+          ) : (
+            <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />
+          )
+        )}
         {screen === 'photos' && (
           <PhotoSelectScreen
             photoUris={photoUris}
@@ -601,6 +626,153 @@ function CardCreateScreen({ onBack, onPickPhoto }: { onBack: () => void; onPickP
         <Text style={styles.primaryText}>사진 선택하기</Text>
       </Pressable>
       <Text style={styles.cardHelperText}>선택한 사진은 퍼즐을 만드는 데만 사용돼요</Text>
+    </View>
+  );
+}
+
+type HomePuzzleTileItem = {
+  id: string;
+  uri: string | null;
+  label: string;
+};
+
+function HomeScreen({
+  account,
+  sentPuzzleUri,
+  receivedPuzzleUri,
+  onCreatePuzzle,
+}: {
+  account: AuthAccount;
+  sentPuzzleUri: string | null;
+  receivedPuzzleUri: string | null;
+  onCreatePuzzle: () => void;
+}) {
+  const receivedPuzzles: HomePuzzleTileItem[] = [
+    ...(receivedPuzzleUri ? [{ id: 'received-mine', uri: receivedPuzzleUri, label: '받은 퍼즐' }] : []),
+    { id: 'received-practice-1', uri: null, label: '연습용 퍼즐' },
+    { id: 'received-practice-2', uri: null, label: '연습용 퍼즐' },
+    { id: 'received-practice-3', uri: null, label: '연습용 퍼즐' },
+  ];
+  const sentPuzzles: HomePuzzleTileItem[] = sentPuzzleUri
+    ? [{ id: 'sent-mine', uri: sentPuzzleUri, label: '보낸 퍼즐' }]
+    : [];
+
+  const shareProfileLink = async () => {
+    const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
+    const shareUrl = `https://puroba.kr/${account.slug}`;
+
+    try {
+      if (webNavigator?.share) {
+        await webNavigator.share({ title: '내 푸러봐 링크', text: '퍼즐로 마음을 보내주세요.', url: shareUrl });
+        return;
+      }
+
+      await Share.share({ title: '내 푸러봐 링크', message: shareUrl, url: shareUrl });
+    } catch {
+      try {
+        await webNavigator?.clipboard?.writeText(shareUrl);
+        Alert.alert('링크 복사 완료', '내 링크를 복사했어요.');
+      } catch {
+        Alert.alert('공유할 수 없어요', '이 브라우저에서는 공유 기능을 지원하지 않아요.');
+      }
+    }
+  };
+
+  return (
+    <View style={styles.homeRoot}>
+      <Image source={{ uri: homeLogoAsset }} style={styles.homeLogo} resizeMode="contain" />
+
+      <View style={styles.homeBanner}>
+        <Image source={{ uri: homeBannerGradientAsset }} style={styles.homeBannerBackground} resizeMode="stretch" />
+        <Image source={{ uri: homeBannerCharacterAsset }} style={styles.homeBannerCharacter} resizeMode="cover" />
+        <Text style={styles.homeBannerTitle}>나한테도 퍼즐 보내줘!</Text>
+        <Text style={styles.homeBannerDescription}>
+          내 링크를 공유하면{'\n'}친구들이 나에게 퍼즐을 보내줄 수 있어요.
+        </Text>
+        <Pressable onPress={shareProfileLink} style={({ pressed }) => [styles.homeShareButton, pressed && styles.pressed]}>
+          <Text style={styles.homeShareButtonText}>링크 공유하기</Text>
+          <Image source={{ uri: homeBannerArrowAsset }} style={styles.homeShareButtonArrow} resizeMode="contain" />
+        </Pressable>
+      </View>
+
+      <HomeSectionHeader title="받은 퍼즐" count={receivedPuzzles.length} style={styles.homeReceivedHeader} />
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.homeReceivedRow}
+        contentContainerStyle={styles.homePuzzleRowContent}
+      >
+        {receivedPuzzles.map((item) => (
+          <HomePuzzleTile key={item.id} item={item} />
+        ))}
+      </ScrollView>
+
+      <HomeSectionHeader title="보낸 퍼즐" count={sentPuzzles.length} style={styles.homeSentHeader} />
+      {sentPuzzles.length > 0 ? (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.homeSentRow}
+          contentContainerStyle={styles.homePuzzleRowContent}
+        >
+          {sentPuzzles.map((item) => (
+            <HomePuzzleTile key={item.id} item={item} />
+          ))}
+        </ScrollView>
+      ) : (
+        <Pressable onPress={onCreatePuzzle} style={styles.homeSentEmpty}>
+          <Text style={styles.homeSentEmptyText}>아직 보낸 퍼즐이 없습니다.</Text>
+        </Pressable>
+      )}
+
+      <HomeTabBar />
+    </View>
+  );
+}
+
+function HomeSectionHeader({ title, count, style }: { title: string; count: number; style?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.homeSectionHeader, style]}>
+      <View style={styles.homeSectionTitleRow}>
+        <Text style={styles.homeSectionTitle}>{title}</Text>
+        <View style={styles.homeSectionCount}>
+          <Text style={styles.homeSectionCountText}>{count}</Text>
+        </View>
+      </View>
+      <Text style={styles.homeSectionMore}>{'전체보기 >'}</Text>
+    </View>
+  );
+}
+
+function HomePuzzleTile({ item }: { item: HomePuzzleTileItem }) {
+  return (
+    <View style={styles.homePuzzleTile}>
+      {item.uri ? (
+        <Image source={{ uri: item.uri }} style={styles.homePuzzleImage} resizeMode="cover" />
+      ) : (
+        <Image source={{ uri: homeLockIconAsset }} style={styles.homePuzzleLock} resizeMode="contain" />
+      )}
+      <Text style={styles.homePuzzleLabel}>{item.label}</Text>
+    </View>
+  );
+}
+
+function HomeTabBar() {
+  return (
+    <View style={styles.homeTabBar}>
+      <View style={[styles.homeTabItem, styles.homeTabItemHome]}>
+        <Image source={{ uri: tabHomeIconAsset }} style={styles.homeTabHomeIcon} resizeMode="contain" />
+        <Text style={[styles.homeTabLabel, styles.homeTabLabelActive]}>홈</Text>
+      </View>
+      <View style={[styles.homeTabItem, styles.homeTabItemPuzzle]}>
+        <Image source={{ uri: tabPuzzleIconAsset }} style={styles.homeTabPuzzleIcon} resizeMode="contain" />
+        <Text style={styles.homeTabLabel}>퍼즐함</Text>
+      </View>
+      <View style={[styles.homeTabItem, styles.homeTabItemProfile]}>
+        <Image source={{ uri: tabProfileIconAsset }} style={styles.homeTabProfileIcon} resizeMode="contain" />
+        <Text style={styles.homeTabLabel}>내 정보</Text>
+      </View>
+      <View style={styles.homeTabIndicator} />
     </View>
   );
 }
@@ -1447,6 +1619,8 @@ const designSystem = {
     topBarHeight: 58,
   },
   font: {
+    family: BODY_FONT_FAMILY,
+    display: DISPLAY_FONT_FAMILY,
     topBarTitle: 17,
     body: 15,
     caption: 13,
@@ -1843,6 +2017,280 @@ const styles = StyleSheet.create({
     backgroundColor: designSystem.color.button,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  homeRoot: {
+    flex: 1,
+    backgroundColor: '#fbfbfb',
+  },
+  homeLogo: {
+    position: 'absolute',
+    left: 20,
+    top: 64,
+    width: 74,
+    height: 39,
+  },
+  homeBanner: {
+    position: 'absolute',
+    left: 20,
+    top: 120,
+    width: 350,
+    height: 161,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 10,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+    backgroundColor: '#9f7cfb',
+    overflow: 'hidden',
+  },
+  homeBannerBackground: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 350,
+    height: 161,
+  },
+  homeBannerCharacter: {
+    position: 'absolute',
+    left: 240,
+    top: 49,
+    width: 95,
+    height: 99,
+  },
+  homeBannerTitle: {
+    position: 'absolute',
+    left: 23,
+    top: 19,
+    color: '#fff',
+    fontFamily: designSystem.font.display,
+    fontSize: 19,
+    lineHeight: 30,
+    fontWeight: '500',
+  },
+  homeBannerDescription: {
+    position: 'absolute',
+    left: 23,
+    top: 56,
+    color: 'rgba(255,255,255,0.9)',
+    fontFamily: designSystem.font.family,
+    fontSize: 13,
+    lineHeight: 21,
+    fontWeight: '700',
+  },
+  homeShareButton: {
+    position: 'absolute',
+    left: 22,
+    top: 112,
+    minWidth: 100,
+    height: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingLeft: 9,
+    paddingRight: 10,
+    borderRadius: 20,
+    backgroundColor: designSystem.color.background,
+  },
+  homeShareButtonText: {
+    color: '#b48bfa',
+    fontFamily: designSystem.font.family,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  homeShareButtonArrow: {
+    marginLeft: 7,
+    width: 5,
+    height: 9,
+    transform: [{ scaleX: -1 }],
+  },
+  homeSectionHeader: {
+    position: 'absolute',
+    left: 24,
+    right: 20,
+    height: 23,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  homeReceivedHeader: {
+    top: 315,
+  },
+  homeSentHeader: {
+    top: 532,
+  },
+  homeSectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  homeSectionTitle: {
+    color: designSystem.color.text,
+    fontFamily: designSystem.font.family,
+    fontSize: 19,
+    lineHeight: 23,
+    fontWeight: '600',
+  },
+  homeSectionCount: {
+    marginLeft: 6,
+    width: 19,
+    height: 19,
+    borderRadius: 10,
+    backgroundColor: '#eaddff',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeSectionCountText: {
+    color: designSystem.color.primary,
+    fontFamily: designSystem.font.family,
+    fontSize: 14,
+    lineHeight: 17,
+    fontWeight: '600',
+  },
+  homeSectionMore: {
+    color: '#666',
+    fontFamily: designSystem.font.family,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+  homeReceivedRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 341,
+    height: 155,
+  },
+  homeSentRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 558,
+    height: 155,
+  },
+  homePuzzleRowContent: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    gap: 17,
+    alignItems: 'center',
+  },
+  homePuzzleTile: {
+    width: 135,
+    height: 135,
+    borderRadius: 10,
+    backgroundColor: designSystem.color.background,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  homePuzzleImage: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 135,
+    height: 95,
+  },
+  homePuzzleLock: {
+    position: 'absolute',
+    left: 54,
+    top: 36,
+    width: 27,
+    height: 43,
+  },
+  homePuzzleLabel: {
+    position: 'absolute',
+    left: 12.5,
+    top: 95,
+    width: 110,
+    color: '#666',
+    fontFamily: designSystem.font.family,
+    fontSize: 13,
+    lineHeight: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  homeSentEmpty: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 568,
+    height: 135,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  homeSentEmptyText: {
+    color: 'rgba(3,3,3,0.4)',
+    fontFamily: designSystem.font.family,
+    fontSize: 15,
+    lineHeight: 28,
+    fontWeight: '500',
+  },
+  homeTabBar: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 752,
+    height: 92,
+    backgroundColor: designSystem.color.background,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    shadowColor: '#828282',
+    shadowOpacity: 0.15,
+    shadowRadius: 80,
+    shadowOffset: { width: 0, height: -5 },
+    elevation: 20,
+  },
+  homeTabItem: {
+    position: 'absolute',
+    top: 0,
+    width: 60,
+    alignItems: 'center',
+  },
+  homeTabItemHome: {
+    left: 44,
+  },
+  homeTabItemPuzzle: {
+    left: 154,
+  },
+  homeTabItemProfile: {
+    left: 276,
+  },
+  homeTabHomeIcon: {
+    marginTop: 19,
+    width: 20,
+    height: 20,
+  },
+  homeTabPuzzleIcon: {
+    marginTop: 20,
+    width: 25,
+    height: 18.75,
+  },
+  homeTabProfileIcon: {
+    marginTop: 20,
+    width: 19,
+    height: 19,
+  },
+  homeTabLabel: {
+    marginTop: 8,
+    color: '#616161',
+    fontFamily: designSystem.font.family,
+    fontSize: 11,
+    lineHeight: 12,
+    fontWeight: '500',
+  },
+  homeTabLabelActive: {
+    color: '#374957',
+    fontWeight: '600',
+  },
+  homeTabIndicator: {
+    position: 'absolute',
+    left: 120,
+    top: 82,
+    width: 150,
+    height: 5,
+    borderRadius: 108,
+    backgroundColor: '#3c3c3c',
+    opacity: 0.1,
   },
   topBar: {
     position: 'absolute',

@@ -107,3 +107,14 @@ export type WebImageConstructor = new () => WebImageElement;
 export type WebCanvasDocument = {
   createElement: (tagName: 'canvas') => WebCanvas;
 };
+
+export type WebStyleElement = {
+  id: string;
+  textContent: string;
+};
+
+export type WebFontDocument = {
+  getElementById: (elementId: string) => WebStyleElement | null;
+  createElement: (tagName: 'style') => WebStyleElement;
+  head: { appendChild: (element: WebStyleElement) => void } | null;
+};
