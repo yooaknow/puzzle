@@ -4,6 +4,7 @@ import {
   Alert,
   GestureResponderEvent,
   Image,
+  ImageSourcePropType,
   ImageStyle,
   LayoutChangeEvent,
   Pressable,
@@ -20,34 +21,66 @@ import {
 } from 'react-native';
 
 import {
-  cardPhotoPuzzle,
-  cardPuzzleSheet,
+  aiPromptPreviewAsset,
+  aiPromptSparkleAsset,
+  aiPuzzleArtworkAsset,
+  cardStartPhotoPlaceholderIconAsset,
+  cardStartPuzzleFrameAsset,
+  cardStartPuzzleSheetAsset,
   celebrationAsset,
-  homeBannerArrowAsset,
-  homeBannerCharacterAsset,
-  homeBannerGradientAsset,
-  homeLockIconAsset,
-  homeLogoAsset,
+  mainBannerCharacterAsset,
+  mainEmptySentEnvelopeAsset,
+  mainHeartFilledIconAsset,
+  mainIosStatusLeftIconAsset,
+  mainIosStatusRightIconAsset,
+  mainLogoAsset,
+  mainMenuTextRightIconAsset,
+  mainNotificationBellIconAsset,
+  mainPinkGiftPuzzleAsset,
+  mainPracticePuzzleAsset,
+  mainModalCloseIconAsset,
+  mainReceivedNotificationPuzzleAsset,
+  mainReceivedPurplePuzzleAsset,
+  mainSentBeachFoodCardAsset,
+  mainSentBeachFriendsCardAsset,
+  mainSentDogCardAsset,
+  mainSentFlowerCardBaseAsset,
+  mainSentFlowerCardOverlayAsset,
+  mainShareArrowIconAsset,
+  mainTabBookHalfIconAsset,
+  mainTabBookOutlineIconAsset,
+  mainTabGlowIconAsset,
+  mainTabHomeFilledIconAsset,
+  mainTabPersonFilledIconAsset,
+  mainTabPuzzleFilledIconAsset,
+  mainYellowGiftPuzzleAsset,
+  profileChevronRightIconAsset,
+  profilePuzzleAvatarAsset,
   loginPuzzleAsset,
-  photoBadgeIconAsset,
-  puzzleBadgeIconAsset,
-  receivedArm,
-  receivedPuzzleSheet,
-  receivedYellowPuzzle,
+  puzzleSizeBadgeIconAsset,
   redoIconAsset,
+  sharedPublicBeachFriendsCardAsset,
+  sharedPublicCatCardAsset,
+  sharedPublicDogCardAsset,
+  sharedPublicFlowerBaseAsset,
+  sharedPublicFlowerOverlayAsset,
+  sharedPublicFoodCardAsset,
+  sharedPublicLockFillIconAsset,
+  sharedPublicModalCloseIconAsset,
+  sharedPublicModalPuzzleAsset,
+  sharedPublicSunsetCardAsset,
+  linkCreatedPuzzleAsset,
   solveCompleteCelebrationAsset,
   solveCompletePuzzleAsset,
   solveSamplePieces,
   solveSamplePuzzle,
-  splashArm,
+  splashBlackArmAsset,
+  splashChevronRightIconAsset,
   splashPuzzleSheet,
-  splashYellowPuzzle,
-  tabHomeIconAsset,
-  tabProfileIconAsset,
-  tabPuzzleIconAsset,
+  splashPuzzleSheetAsset,
+  splashYellowPuzzleAsset,
   trashIconAsset,
   undoIconAsset,
-  uploadIcon,
   authPuzzleIconAsset,
 } from './src/assets';
 import { BODY_FONT_FAMILY, DISPLAY_FONT_FAMILY, loadWebFonts } from './src/fonts';
@@ -93,6 +126,7 @@ const DRAW_COLORS = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#29
 const TEXT_COLORS = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#fff', '#000'];
 const AUTH_ACCOUNTS_KEY = 'puzzlw:authAccounts';
 const AUTH_SESSION_KEY = 'puzzlw:authSession';
+const AI_PUZZLE_ARTWORK_URI = '/images/ai-puzzle-artwork-sunset.png';
 
 type AuthAccount = {
   name: string;
@@ -151,8 +185,14 @@ export default function App() {
     }
 
     setCurrentAccount(result.account);
-    setScreen('card');
+    setScreen('linkCreated');
     return null;
+  }, []);
+
+  const startWithAiArtwork = useCallback(() => {
+    setPhotoUris([AI_PUZZLE_ARTWORK_URI]);
+    setSelectedPhotoIndex(0);
+    setScreen('puzzle');
   }, []);
 
   useEffect(() => {
@@ -204,6 +244,10 @@ export default function App() {
       setScreen('photos');
       return;
     }
+    if (screen === 'aiDecorate') {
+      setScreen('puzzle');
+      return;
+    }
     if (screen === 'complete') {
       setScreen('puzzle');
       return;
@@ -220,6 +264,10 @@ export default function App() {
       setScreen('splash');
       return;
     }
+    if (screen === 'linkCreated' || screen === 'puzzleBox' || screen === 'profile') {
+      setScreen('card');
+      return;
+    }
     if (screen === 'login' || screen === 'signup') {
       setScreen('splash');
       return;
@@ -232,7 +280,7 @@ export default function App() {
       <StatusBar style="dark" backgroundColor="#fff" />
       <View style={[styles.screen, { transform: [{ scale }] }]}>
         {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen(currentAccount ? 'card' : 'login')} />}
-        {screen === 'received' && <ReceivedLinkScreen onOpenPuzzle={() => setScreen('solve')} />}
+        {screen === 'received' && <ReceivedLinkScreen recipientName="OO" onCreatePuzzle={openPhotoPicker} onOpenPuzzle={() => setScreen('solve')} />}
         {screen === 'login' && (
           <AuthScreen
             mode="login"
@@ -249,17 +297,42 @@ export default function App() {
             onSubmit={handleAuthSubmit}
           />
         )}
+        {screen === 'linkCreated' && currentAccount && (
+          <LinkCreatedScreen account={currentAccount} onBack={() => setScreen('card')} onDone={() => setScreen('card')} />
+        )}
         {screen === 'card' && (
           currentAccount ? (
             <HomeScreen
               account={currentAccount}
               sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
               receivedPuzzleUri={storedPuzzleUri}
-              onCreatePuzzle={openPhotoPicker}
+              onCreatePuzzle={startWithAiArtwork}
+              onOpenReceivedPuzzle={() => setScreen('solve')}
+              onOpenPuzzleBox={() => setScreen('puzzleBox')}
+              onOpenProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
             />
           ) : (
-            <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />
+            <CardCreateScreen onBack={goBack} onPickPhoto={startWithAiArtwork} />
           )
+        )}
+        {screen === 'puzzleBox' && (
+          <PuzzleBoxScreen
+            onBack={() => setScreen('card')}
+            onHome={() => setScreen('card')}
+            onProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
+            onCreatePuzzle={startWithAiArtwork}
+            receivedPuzzleUri={storedPuzzleUri}
+            sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
+            solvedPreviewUri={completedPuzzleSourceUri ?? storedPuzzleSourceUri}
+          />
+        )}
+        {screen === 'profile' && currentAccount && (
+          <ProfileScreen
+            account={currentAccount}
+            onBack={() => setScreen('card')}
+            onHome={() => setScreen('card')}
+            onPuzzleBox={() => setScreen('puzzleBox')}
+          />
         )}
         {screen === 'photos' && (
           <PhotoSelectScreen
@@ -276,7 +349,7 @@ export default function App() {
             photoUri={selectedPhotoUri}
             screenScale={scale}
             onBack={goBack}
-            onChangePhoto={() => setScreen('photos')}
+            onChangePhoto={() => setScreen('aiDecorate')}
             onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
               setCompletedPuzzleUri(puzzleUri);
               setCompletedPuzzleSourceUri(puzzleSourceUri);
@@ -285,6 +358,14 @@ export default function App() {
               setCompletedTextStickers(textStickers);
               setScreen('complete');
             }}
+          />
+        )}
+        {screen === 'aiDecorate' && selectedPhotoUri && (
+          <AiDecorateScreen
+            photoUri={selectedPhotoUri}
+            onBack={() => setScreen('puzzle')}
+            onSkip={() => setScreen('puzzle')}
+            onApply={() => setScreen('puzzle')}
           />
         )}
         {screen === 'complete' && completedPuzzleUri && (
@@ -328,23 +409,27 @@ export default function App() {
 function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () => void }) {
   return (
     <View style={styles.fill}>
-      <View style={styles.splashHeroPuzzleWrap}>
-        <Image source={{ uri: splashYellowPuzzle }} style={styles.splashHeroPuzzle} resizeMode="cover" />
+      <View style={styles.splashStatusBar}>
+        <Image source={mainIosStatusLeftIconAsset} style={styles.splashStatusLeft} resizeMode="contain" />
+        <Image source={mainIosStatusRightIconAsset} style={styles.splashStatusRight} resizeMode="contain" />
       </View>
-      <Image source={{ uri: splashArm }} style={styles.splashArm} resizeMode="cover" />
+      <View style={styles.splashHeroPuzzleWrap}>
+        <Image source={splashYellowPuzzleAsset} style={styles.splashHeroPuzzle} resizeMode="cover" />
+      </View>
+      <Image source={splashBlackArmAsset} style={styles.splashArm} resizeMode="cover" />
 
       <View style={styles.splashCopyBlock}>
         <Text style={styles.splashHeadline}>하고 싶은{'\n'}말이 있는데{'\n'}그냥 알려주긴{'\n'}싫어.</Text>
         <Text style={styles.splashBrand}>푸러봐</Text>
       </View>
 
-      <PuzzleCrop image={splashPuzzleSheet} style={styles.splashPinkPuzzle} cropStyle={styles.splashPinkCrop} opacity={0.4} />
-      <PuzzleCrop image={splashPuzzleSheet} style={styles.splashPurplePuzzle} cropStyle={styles.splashPurpleCrop} opacity={0.7} />
-      <PuzzleCrop image={splashPuzzleSheet} style={styles.splashMintPuzzle} cropStyle={styles.splashMintCrop} opacity={0.4} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.splashPinkPuzzle} cropStyle={styles.splashPinkCrop} opacity={0.4} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.splashPurplePuzzle} cropStyle={styles.splashPurpleCrop} opacity={0.7} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.splashMintPuzzle} cropStyle={styles.splashMintCrop} opacity={0.4} />
 
       <Pressable onPress={onStart} style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}>
         <Text style={styles.primaryText}>퍼즐 만들기</Text>
-        <Text style={styles.chevron}>›</Text>
+        <Image source={splashChevronRightIconAsset} style={styles.chevronIcon} resizeMode="contain" />
       </Pressable>
       <Pressable onPress={onLogin} style={({ pressed }) => [styles.splashLoginButton, pressed && styles.pressed]}>
         <Text style={styles.splashLoginText}>로그인 · 내 퍼즐함</Text>
@@ -353,26 +438,230 @@ function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () =
   );
 }
 
-function ReceivedLinkScreen({ onOpenPuzzle }: { onOpenPuzzle: () => void }) {
+type SharedPublicPuzzleCardProps = {
+  backgroundColor: string;
+  date: string;
+  onPress: () => void;
+  locked?: boolean;
+  showLink?: boolean;
+  layers: Array<{
+    source: ImageSourcePropType;
+    style: ImageStyle;
+  }>;
+};
+
+function SharedPublicPuzzleCard({ backgroundColor, date, onPress, locked = false, showLink = true, layers }: SharedPublicPuzzleCardProps) {
   return (
-    <View style={styles.fill}>
-      <View style={styles.receivedHeroPuzzleWrap}>
-        <Image source={{ uri: receivedYellowPuzzle }} style={styles.receivedHeroPuzzle} resizeMode="cover" />
+    <Pressable disabled={locked} onPress={onPress} style={({ pressed }) => [styles.sharedPublicPuzzleCard, pressed && styles.pressed]}>
+      <View style={[styles.sharedPublicPuzzlePreview, { backgroundColor }]}>
+        {layers.map((layer, index) => (
+          <Image
+            key={`${date}-${index}`}
+            source={layer.source}
+            style={[styles.sharedPublicPuzzleImage, layer.style]}
+            resizeMode="cover"
+            blurRadius={locked ? 7 : 0}
+          />
+        ))}
+        {locked && <View style={styles.sharedPublicLockedScrim} />}
+        {locked && <Image source={sharedPublicLockFillIconAsset} style={styles.sharedPublicLockIcon} resizeMode="contain" />}
       </View>
-      <Image source={{ uri: receivedArm }} style={styles.receivedArm} resizeMode="cover" />
+      <View style={styles.sharedPublicPuzzleMeta}>
+        <Text style={styles.sharedPublicPuzzleDate}>{date}</Text>
+        {showLink && (
+          <View style={styles.sharedPublicPuzzleLink}>
+            <Text style={styles.sharedPublicPuzzleLinkText}>퍼즐 보기</Text>
+            <Image source={mainShareArrowIconAsset} style={styles.sharedPublicPuzzleArrow} resizeMode="contain" />
+          </View>
+        )}
+      </View>
+    </Pressable>
+  );
+}
 
-      <View style={styles.receivedCopyBlock}>
-        <Text style={styles.receivedHeadline}>누군가{'\n'}당신에게{'\n'}하고 싶은 말이{'\n'}있대요.</Text>
-        <Text style={styles.receivedBrand}>푸러봐</Text>
+function ReceivedLinkScreen({
+  recipientName,
+  onCreatePuzzle,
+  onOpenPuzzle,
+}: {
+  recipientName: string;
+  onCreatePuzzle: () => void;
+  onOpenPuzzle: () => void;
+}) {
+  const [selectedPublicPuzzleDate, setSelectedPublicPuzzleDate] = useState<string | null>(null);
+  const isPrivatePublicPuzzles = useMemo(() => {
+    const webLocation = (globalThis as unknown as { location?: { search?: string } }).location;
+    return webLocation?.search?.includes('private=1') ?? false;
+  }, []);
+  const publicPuzzleRows = [
+    [
+      {
+        backgroundColor: '#f7d8df',
+        date: '8월 18일',
+        showLink: !isPrivatePublicPuzzles,
+        layers: [
+          { source: sharedPublicFlowerBaseAsset, style: styles.sharedPublicFlowerBase },
+          { source: sharedPublicFlowerOverlayAsset, style: styles.sharedPublicFlowerOverlay },
+        ],
+      },
+      {
+        backgroundColor: '#dccbff',
+        date: '8월 12일',
+        layers: [{ source: sharedPublicBeachFriendsCardAsset, style: styles.sharedPublicBeachFriends }],
+      },
+    ],
+    [
+      {
+        backgroundColor: '#cde8ff',
+        date: '8월 3일',
+        layers: [{ source: sharedPublicDogCardAsset, style: styles.sharedPublicDog }],
+      },
+      {
+        backgroundColor: '#ffe6a8',
+        date: '7월 28일',
+        layers: [{ source: sharedPublicFoodCardAsset, style: styles.sharedPublicFood }],
+      },
+    ],
+    [
+      {
+        backgroundColor: '#e9eef2',
+        date: '8월 18일',
+        showLink: !isPrivatePublicPuzzles,
+        layers: [{ source: sharedPublicCatCardAsset, style: styles.sharedPublicCat }],
+      },
+      {
+        backgroundColor: '#f5d6bf',
+        date: '8월 12일',
+        layers: [{ source: sharedPublicSunsetCardAsset, style: styles.sharedPublicSunset }],
+      },
+    ],
+  ];
+
+  return (
+    <View style={styles.sharedLinkRoot}>
+      <View style={styles.sharedLinkStatusLeft}>
+        <Image source={mainIosStatusLeftIconAsset} style={styles.sharedLinkStatusLeftIcon} resizeMode="contain" />
+      </View>
+      <View style={styles.sharedLinkStatusRight}>
+        <Image source={mainIosStatusRightIconAsset} style={styles.sharedLinkStatusRightIcon} resizeMode="contain" />
+      </View>
+      <Image source={mainLogoAsset} style={styles.sharedLinkLogo} resizeMode="contain" />
+
+      <View style={styles.sharedLinkBanner}>
+        <Text style={styles.sharedLinkBannerTitle}>{recipientName}님에게{'\n'}퍼즐을 만들어주세요!</Text>
+        <Text style={styles.sharedLinkBannerDescription}>사진과 하고 싶은 말을 담아{'\n'}특별한 퍼즐로 보내보세요.</Text>
+        <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.sharedLinkBannerCta, pressed && styles.pressed]}>
+          <Text style={styles.sharedLinkBannerCtaText}>퍼즐 만들어주기!</Text>
+          <Image source={mainShareArrowIconAsset} style={styles.sharedLinkBannerArrow} resizeMode="contain" />
+        </Pressable>
+        <View style={styles.sharedLinkBannerUnderline} />
+        <Image source={mainBannerCharacterAsset} style={styles.sharedLinkBannerCharacter} resizeMode="contain" />
       </View>
 
-      <PuzzleCrop image={receivedPuzzleSheet} style={styles.receivedPinkPuzzle} cropStyle={styles.receivedPinkCrop} opacity={0.5} />
-      <PuzzleCrop image={receivedPuzzleSheet} style={styles.receivedPurplePuzzle} cropStyle={styles.receivedPurpleCrop} opacity={0.7} />
-      <PuzzleCrop image={receivedPuzzleSheet} style={styles.receivedMintPuzzle} cropStyle={styles.receivedMintCrop} opacity={0.4} />
+      <Text style={styles.sharedPublicTitle}>{recipientName}님이 공개한 퍼즐</Text>
+      <Text style={styles.sharedPublicCount}>{isPrivatePublicPuzzles ? '0개' : '7개'}</Text>
+      <View style={styles.sharedPublicGrid}>
+        {publicPuzzleRows.map((row, rowIndex) => (
+          <View key={`public-row-${rowIndex}`} style={styles.sharedPublicRow}>
+            {row.map((card) => (
+              <SharedPublicPuzzleCard
+                key={card.date}
+                backgroundColor={card.backgroundColor}
+                date={card.date}
+                layers={card.layers}
+                locked={isPrivatePublicPuzzles}
+                showLink={card.showLink ?? true}
+                onPress={() => setSelectedPublicPuzzleDate(card.date)}
+              />
+            ))}
+          </View>
+        ))}
+      </View>
 
-      <Pressable onPress={onOpenPuzzle} style={({ pressed }) => [styles.receivedButton, pressed && styles.pressed]}>
-        <Text style={styles.primaryText}>퍼즐 확인하기</Text>
-        <Text style={styles.chevron}>›</Text>
+      {selectedPublicPuzzleDate && (
+        <SharedPublicPuzzleModal
+          date={selectedPublicPuzzleDate}
+          onClose={() => setSelectedPublicPuzzleDate(null)}
+          onLater={() => setSelectedPublicPuzzleDate(null)}
+          onStart={onOpenPuzzle}
+        />
+      )}
+    </View>
+  );
+}
+
+function SharedPublicPuzzleModal({
+  date,
+  onClose,
+  onLater,
+  onStart,
+}: {
+  date: string;
+  onClose: () => void;
+  onLater: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <View style={styles.sharedPublicModalOverlay}>
+      <View style={styles.sharedPublicModalCard}>
+        <Text style={styles.sharedPublicModalTitle}>{date} 퍼즐</Text>
+        <Pressable onPress={onClose} style={({ pressed }) => [styles.sharedPublicModalClose, pressed && styles.pressed]}>
+          <Image source={sharedPublicModalCloseIconAsset} style={styles.sharedPublicModalCloseIcon} resizeMode="contain" />
+        </Pressable>
+        <Image source={sharedPublicModalPuzzleAsset} style={styles.sharedPublicModalPuzzle} resizeMode="cover" />
+        <Pressable onPress={onLater} style={({ pressed }) => [styles.sharedPublicModalLaterButton, pressed && styles.pressed]}>
+          <Text style={styles.sharedPublicModalButtonText}>아니요, 다음에 할게요</Text>
+        </Pressable>
+        <Pressable onPress={onStart} style={({ pressed }) => [styles.sharedPublicModalStartButton, pressed && styles.pressed]}>
+          <Text style={styles.sharedPublicModalButtonText}>저도 풀어볼래요!</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function LinkCreatedScreen({ account, onBack, onDone }: { account: AuthAccount; onBack: () => void; onDone: () => void }) {
+  const shareProfileLink = async () => {
+    const url = getShareUrl(account.slug);
+    try {
+      const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
+      if (webNavigator?.share) {
+        await Share.share({
+          title: '푸러봐 링크',
+          message: `${account.name}님에게 퍼즐을 보내주세요!\n${url}`,
+          url,
+        });
+      } else {
+        await webNavigator?.clipboard?.writeText(url);
+        Alert.alert('링크가 복사됐어요', '친구에게 공유해 퍼즐을 받아보세요.');
+      }
+    } catch {
+      Alert.alert('공유를 다시 시도해주세요', '링크 공유 중 문제가 생겼어요.');
+      return;
+    }
+
+    onDone();
+  };
+
+  return (
+    <View style={styles.linkCreatedRoot}>
+      <TopBar title="링크 생성" onBack={onBack} withBorder />
+
+      <Text style={styles.linkCreatedTitle}>
+        <Text>짜잔!{'\n'}내 </Text>
+        <Text style={styles.linkCreatedTitleAccent}>푸러봐</Text>
+        <Text> 링크가{'\n'}생겼어요</Text>
+      </Text>
+
+      <Image source={linkCreatedPuzzleAsset} style={styles.linkCreatedPuzzle} resizeMode="cover" />
+
+      <Text style={styles.linkCreatedDescription}>생성된 링크로 친구들이{'\n'}나에게 퍼즐을 보낼 수 있어요.</Text>
+
+      <Pressable onPress={shareProfileLink} style={({ pressed }) => [styles.linkCreatedShareButton, pressed && styles.pressed]}>
+        <Text style={styles.linkCreatedShareText}>링크 공유하기</Text>
+      </Pressable>
+      <Pressable onPress={onDone} style={({ pressed }) => [styles.linkCreatedSkipButton, pressed && styles.pressed]}>
+        <Text style={styles.linkCreatedSkipText}>나중에 할게요</Text>
       </Pressable>
     </View>
   );
@@ -601,15 +890,15 @@ function CardCreateScreen({ onBack, onPickPhoto }: { onBack: () => void; onPickP
 
       <Pressable onPress={onPickPhoto} style={styles.photoPuzzleArea}>
         <View style={styles.photoPuzzleWrap}>
-          <Image source={{ uri: cardPhotoPuzzle }} style={styles.photoPuzzle} resizeMode="cover" />
+          <Image source={cardStartPuzzleFrameAsset} style={styles.photoPuzzle} resizeMode="cover" />
         </View>
-        <Image source={{ uri: uploadIcon }} style={styles.uploadIcon} resizeMode="contain" />
+        <Image source={cardStartPhotoPlaceholderIconAsset} style={styles.uploadIcon} resizeMode="contain" />
         <Text style={styles.photoPrompt}>사진을 선택해 주세요</Text>
       </Pressable>
 
-      <PuzzleCrop image={cardPuzzleSheet} style={styles.cardPinkPuzzle} cropStyle={styles.cardPinkCrop} opacity={0.7} />
-      <PuzzleCrop image={cardPuzzleSheet} style={styles.cardPurplePuzzle} cropStyle={styles.cardPurpleCrop} opacity={0.7} />
-      <PuzzleCrop image={cardPuzzleSheet} style={styles.cardSmallYellowPuzzle} cropStyle={styles.cardSmallYellowCrop} opacity={0.6} />
+      <PuzzleCrop image={cardStartPuzzleSheetAsset} style={styles.cardPinkPuzzle} cropStyle={styles.cardPinkCrop} opacity={0.7} />
+      <PuzzleCrop image={cardStartPuzzleSheetAsset} style={styles.cardPurplePuzzle} cropStyle={styles.cardPurpleCrop} opacity={0.7} />
+      <PuzzleCrop image={cardStartPuzzleSheetAsset} style={styles.cardSmallYellowPuzzle} cropStyle={styles.cardSmallYellowCrop} opacity={0.6} />
 
       <View style={styles.cardTitleBlock}>
         <Text style={styles.cardTitleLine}>사진으로</Text>
@@ -632,8 +921,22 @@ function CardCreateScreen({ onBack, onPickPhoto }: { onBack: () => void; onPickP
 
 type HomePuzzleTileItem = {
   id: string;
-  uri: string | null;
+  variant?: 'puzzle';
+  source: ImageSourcePropType;
   label: string;
+  badge: 'practice' | 'newPink' | 'newYellow' | 'newPurple';
+  imageStyle: StyleProp<ImageStyle>;
+  backgroundSource?: ImageSourcePropType;
+  backgroundStyle?: StyleProp<ImageStyle>;
+};
+
+type HomePhotoTileItem = {
+  id: string;
+  variant: 'photo';
+  source: ImageSourcePropType;
+  imageStyle?: StyleProp<ImageStyle>;
+  overlaySource?: ImageSourcePropType;
+  overlayStyle?: StyleProp<ImageStyle>;
 };
 
 function HomeScreen({
@@ -641,20 +944,73 @@ function HomeScreen({
   sentPuzzleUri,
   receivedPuzzleUri,
   onCreatePuzzle,
+  onOpenReceivedPuzzle,
+  onOpenPuzzleBox,
+  onOpenProfile,
 }: {
   account: AuthAccount;
   sentPuzzleUri: string | null;
   receivedPuzzleUri: string | null;
   onCreatePuzzle: () => void;
+  onOpenReceivedPuzzle: () => void;
+  onOpenPuzzleBox: () => void;
+  onOpenProfile: () => void;
 }) {
+  const [isReceivedNoticeVisible, setIsReceivedNoticeVisible] = useState(Boolean(receivedPuzzleUri));
+
+  useEffect(() => {
+    if (receivedPuzzleUri) {
+      setIsReceivedNoticeVisible(true);
+    }
+  }, [receivedPuzzleUri]);
+
   const receivedPuzzles: HomePuzzleTileItem[] = [
-    ...(receivedPuzzleUri ? [{ id: 'received-mine', uri: receivedPuzzleUri, label: '받은 퍼즐' }] : []),
-    { id: 'received-practice-1', uri: null, label: '연습용 퍼즐' },
-    { id: 'received-practice-2', uri: null, label: '연습용 퍼즐' },
-    { id: 'received-practice-3', uri: null, label: '연습용 퍼즐' },
+    {
+      id: 'received-practice',
+      source: mainPracticePuzzleAsset,
+      label: '연습용 퍼즐',
+      badge: 'practice',
+      imageStyle: styles.homePuzzlePracticeImage,
+    },
+    {
+      id: 'received-pink-gift',
+      source: mainPinkGiftPuzzleAsset,
+      label: '친구가 보낸 퍼즐',
+      badge: 'newPink',
+      imageStyle: styles.homePuzzleGiftImage,
+    },
+    receivedPuzzleUri
+      ? {
+          id: 'received-live-puzzle',
+          source: mainReceivedPurplePuzzleAsset,
+          backgroundSource: { uri: receivedPuzzleUri },
+          backgroundStyle: styles.homeReceivedPuzzleBackgroundImage,
+          label: '친구가 보낸 퍼즐',
+          badge: 'newPurple',
+          imageStyle: styles.homeReceivedPurplePuzzleImage,
+        }
+      : {
+          id: 'received-yellow-gift',
+          source: mainYellowGiftPuzzleAsset,
+          label: '친구가 보낸 퍼즐',
+          badge: 'newYellow',
+          imageStyle: styles.homePuzzleGiftImage,
+        },
   ];
-  const sentPuzzles: HomePuzzleTileItem[] = sentPuzzleUri
-    ? [{ id: 'sent-mine', uri: sentPuzzleUri, label: '보낸 퍼즐' }]
+  const sentPuzzles: HomePhotoTileItem[] = sentPuzzleUri
+    ? [
+        { id: 'sent-mine', variant: 'photo', source: { uri: sentPuzzleUri }, imageStyle: styles.homeSentPhotoImage },
+        { id: 'sent-beach-friends', variant: 'photo', source: mainSentBeachFriendsCardAsset, imageStyle: styles.homeSentPhotoImage },
+        {
+          id: 'sent-flowers',
+          variant: 'photo',
+          source: mainSentFlowerCardBaseAsset,
+          imageStyle: styles.homeSentFlowerImage,
+          overlaySource: mainSentFlowerCardOverlayAsset,
+          overlayStyle: styles.homeSentFlowerImage,
+        },
+        { id: 'sent-dog', variant: 'photo', source: mainSentDogCardAsset, imageStyle: styles.homeSentDogImage },
+      ]
     : [];
 
   const shareProfileLink = async () => {
@@ -680,22 +1036,29 @@ function HomeScreen({
 
   return (
     <View style={styles.homeRoot}>
-      <Image source={{ uri: homeLogoAsset }} style={styles.homeLogo} resizeMode="contain" />
-
-      <View style={styles.homeBanner}>
-        <Image source={{ uri: homeBannerGradientAsset }} style={styles.homeBannerBackground} resizeMode="stretch" />
-        <Image source={{ uri: homeBannerCharacterAsset }} style={styles.homeBannerCharacter} resizeMode="cover" />
-        <Text style={styles.homeBannerTitle}>나한테도 퍼즐 보내줘!</Text>
-        <Text style={styles.homeBannerDescription}>
-          내 링크를 공유하면{'\n'}친구들이 나에게 퍼즐을 보내줄 수 있어요.
-        </Text>
-        <Pressable onPress={shareProfileLink} style={({ pressed }) => [styles.homeShareButton, pressed && styles.pressed]}>
-          <Text style={styles.homeShareButtonText}>링크 공유하기</Text>
-          <Image source={{ uri: homeBannerArrowAsset }} style={styles.homeShareButtonArrow} resizeMode="contain" />
-        </Pressable>
+      <View style={styles.homeStatusBar}>
+        <Image source={mainIosStatusLeftIconAsset} style={styles.homeStatusLeft} resizeMode="contain" />
+        <Image source={mainIosStatusRightIconAsset} style={styles.homeStatusRight} resizeMode="contain" />
       </View>
 
-      <HomeSectionHeader title="받은 퍼즐" count={receivedPuzzles.length} style={styles.homeReceivedHeader} />
+      <Image source={mainLogoAsset} style={styles.homeLogo} resizeMode="contain" />
+      <Image source={mainMenuTextRightIconAsset} style={styles.homeMenuIcon} resizeMode="contain" />
+      <Image source={mainNotificationBellIconAsset} style={styles.homeBellIcon} resizeMode="contain" />
+
+      <Pressable onPress={shareProfileLink} style={({ pressed }) => [styles.homeBanner, pressed && styles.pressed]}>
+        <Text style={styles.homeBannerTitle}>친구에게 퍼즐을{'\n'}받아볼까요?</Text>
+        <Text style={styles.homeBannerDescription}>
+          내 링크를 공유하면{'\n'}친구가 나에게 퍼즐을 보내줄 수 있어요.
+        </Text>
+        <View style={styles.homeShareUnderline} />
+        <View style={styles.homeShareLink}>
+          <Text style={styles.homeShareButtonText}>링크 공유하러 가기!</Text>
+          <Image source={mainShareArrowIconAsset} style={styles.homeShareButtonArrow} resizeMode="contain" />
+        </View>
+        <Image source={mainBannerCharacterAsset} style={styles.homeBannerCharacter} resizeMode="cover" />
+      </Pressable>
+
+      <HomeSectionHeader title="이번 주 받은 퍼즐" style={styles.homeReceivedHeader} highlightStyle={styles.homeReceivedHighlight} showHeart onPressMore={onOpenPuzzleBox} />
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -707,7 +1070,8 @@ function HomeScreen({
         ))}
       </ScrollView>
 
-      <HomeSectionHeader title="보낸 퍼즐" count={sentPuzzles.length} style={styles.homeSentHeader} />
+      <HomeSectionHeader title="최근 보낸 퍼즐" style={styles.homeSentHeader} highlightStyle={styles.homeSentHighlight} onPressMore={onOpenPuzzleBox} />
+      <Image source={mainTabGlowIconAsset} style={styles.homeTabGlow} resizeMode="stretch" />
       {sentPuzzles.length > 0 ? (
         <ScrollView
           horizontal
@@ -716,62 +1080,361 @@ function HomeScreen({
           contentContainerStyle={styles.homePuzzleRowContent}
         >
           {sentPuzzles.map((item) => (
-            <HomePuzzleTile key={item.id} item={item} />
+            <HomeTile key={item.id} item={item} />
           ))}
         </ScrollView>
       ) : (
         <Pressable onPress={onCreatePuzzle} style={styles.homeSentEmpty}>
+          <Image source={mainEmptySentEnvelopeAsset} style={styles.homeSentEmptyImage} resizeMode="contain" />
           <Text style={styles.homeSentEmptyText}>아직 보낸 퍼즐이 없습니다.</Text>
         </Pressable>
       )}
 
-      <HomeTabBar />
+      <HomeTabBar activeTab="home" onHome={() => undefined} onPuzzleBox={onOpenPuzzleBox} onProfile={onOpenProfile} />
+      {receivedPuzzleUri && isReceivedNoticeVisible && (
+        <ReceivedPuzzleNotice
+          onClose={() => setIsReceivedNoticeVisible(false)}
+          onLater={() => setIsReceivedNoticeVisible(false)}
+          onStart={() => {
+            setIsReceivedNoticeVisible(false);
+            onOpenReceivedPuzzle();
+          }}
+        />
+      )}
     </View>
   );
 }
 
-function HomeSectionHeader({ title, count, style }: { title: string; count: number; style?: StyleProp<ViewStyle> }) {
+function HomeSectionHeader({
+  title,
+  style,
+  highlightStyle,
+  showHeart = false,
+  onPressMore,
+}: {
+  title: string;
+  style?: StyleProp<ViewStyle>;
+  highlightStyle: StyleProp<ViewStyle>;
+  showHeart?: boolean;
+  onPressMore?: () => void;
+}) {
   return (
     <View style={[styles.homeSectionHeader, style]}>
-      <View style={styles.homeSectionTitleRow}>
+      <View style={styles.homeSectionTitleWrap}>
+        <View style={[styles.homeSectionHighlight, highlightStyle]} />
         <Text style={styles.homeSectionTitle}>{title}</Text>
-        <View style={styles.homeSectionCount}>
-          <Text style={styles.homeSectionCountText}>{count}</Text>
-        </View>
+        {showHeart && <Image source={mainHeartFilledIconAsset} style={styles.homeSectionHeart} resizeMode="contain" />}
       </View>
-      <Text style={styles.homeSectionMore}>{'전체보기 >'}</Text>
+      <Pressable onPress={onPressMore} disabled={!onPressMore} style={({ pressed }) => pressed && styles.pressed}>
+        <Text style={styles.homeSectionMore}>{'전체보기 >'}</Text>
+      </Pressable>
     </View>
   );
 }
 
 function HomePuzzleTile({ item }: { item: HomePuzzleTileItem }) {
+  const isPractice = item.badge === 'practice';
+  const isYellow = item.badge === 'newYellow';
+
   return (
     <View style={styles.homePuzzleTile}>
-      {item.uri ? (
-        <Image source={{ uri: item.uri }} style={styles.homePuzzleImage} resizeMode="cover" />
-      ) : (
-        <Image source={{ uri: homeLockIconAsset }} style={styles.homePuzzleLock} resizeMode="contain" />
-      )}
+      {item.backgroundSource && <Image source={item.backgroundSource} style={item.backgroundStyle} resizeMode="cover" />}
+      <View
+        style={[
+          styles.homePuzzleBadge,
+          isPractice ? styles.homePuzzleBadgePractice : isYellow ? styles.homePuzzleBadgeYellow : item.badge === 'newPurple' ? styles.homePuzzleBadgePurple : styles.homePuzzleBadgeNew,
+        ]}
+      >
+        <Text style={[styles.homePuzzleBadgeText, isPractice ? styles.homePuzzleBadgeTextPractice : styles.homePuzzleBadgeTextNew]}>
+          {isPractice ? '연습용' : 'NEW'}
+        </Text>
+      </View>
+      <Image source={item.source} style={item.imageStyle} resizeMode="contain" />
       <Text style={styles.homePuzzleLabel}>{item.label}</Text>
     </View>
   );
 }
 
-function HomeTabBar() {
+function HomePhotoTile({ item, tileStyle }: { item: HomePhotoTileItem; tileStyle?: StyleProp<ViewStyle> }) {
+  return (
+    <View style={[styles.homePhotoTile, tileStyle]}>
+      <Image source={item.source} style={[styles.homePhotoTileImage, item.imageStyle]} resizeMode="cover" />
+      {item.overlaySource && <Image source={item.overlaySource} style={[styles.homePhotoTileImage, item.overlayStyle]} resizeMode="cover" />}
+    </View>
+  );
+}
+
+function HomeTile({ item }: { item: HomePuzzleTileItem | HomePhotoTileItem }) {
+  return item.variant === 'photo' ? <HomePhotoTile item={item} /> : <HomePuzzleTile item={item} />;
+}
+
+function ProfileScreen({
+  account,
+  onBack,
+  onHome,
+  onPuzzleBox,
+}: {
+  account: AuthAccount;
+  onBack: () => void;
+  onHome: () => void;
+  onPuzzleBox: () => void;
+}) {
+  return (
+    <View style={styles.profileRoot}>
+      <View style={styles.profileTopBar}>
+        <View style={styles.homeStatusBar}>
+          <Image source={mainIosStatusLeftIconAsset} style={styles.homeStatusLeft} resizeMode="contain" />
+          <Image source={mainIosStatusRightIconAsset} style={styles.homeStatusRight} resizeMode="contain" />
+        </View>
+        <Pressable onPress={onBack} style={({ pressed }) => [styles.profileBackButton, pressed && styles.pressed]}>
+          <Text style={styles.profileBackIcon}>‹</Text>
+        </Pressable>
+        <Text style={styles.profileTopTitle}>내 정보</Text>
+      </View>
+
+      <View style={styles.profileSummary}>
+        <View style={styles.profileAvatarCircle}>
+          <Image source={profilePuzzleAvatarAsset} style={styles.profileAvatarImage} resizeMode="cover" />
+        </View>
+        <Text style={styles.profileName}>{account.name}</Text>
+        <Text style={styles.profileCreatedAt}>계정 생성일 2026.08.20</Text>
+      </View>
+
+      <ProfileSectionHeader title="계정 정보" top={238} />
+      <ProfileRow label="이름" top={283} />
+      <ProfileRow label="이메일" top={334} />
+      <ProfileRow label="비밀번호" top={385} />
+
+      <ProfileSectionHeader title="서비스 정보" top={428} />
+      <ProfileRow label="이용약관" top={475} />
+      <ProfileRow label="개인정보 처리 방침" top={526} />
+      <ProfileRow label="문의하기" top={576} />
+
+      <ProfileSectionHeader title="계정 관리" top={622} />
+      <ProfileRow label="로그아웃" top={670} isAccent />
+      <ProfileRow label="회원 탈퇴" top={720} showChevron={false} />
+
+      <HomeTabBar activeTab="profile" onHome={onHome} onPuzzleBox={onPuzzleBox} onProfile={() => undefined} />
+    </View>
+  );
+}
+
+function ProfileSectionHeader({ title, top }: { title: string; top: number }) {
+  return (
+    <View style={[styles.profileSectionHeader, { top }]}>
+      <Text style={styles.profileSectionHeaderText}>{title}</Text>
+    </View>
+  );
+}
+
+function ProfileRow({
+  label,
+  top,
+  isAccent = false,
+  showChevron = true,
+}: {
+  label: string;
+  top: number;
+  isAccent?: boolean;
+  showChevron?: boolean;
+}) {
+  return (
+    <View style={[styles.profileRow, { top }]}>
+      <Text style={[styles.profileRowText, isAccent && styles.profileRowTextAccent]}>{label}</Text>
+      {showChevron && <Image source={profileChevronRightIconAsset} style={styles.profileRowChevron} resizeMode="contain" />}
+      <View style={styles.profileRowDivider} />
+    </View>
+  );
+}
+
+function PuzzleBoxScreen({
+  onBack,
+  onHome,
+  onProfile,
+  onCreatePuzzle,
+  receivedPuzzleUri,
+  sentPuzzleUri,
+  solvedPreviewUri,
+}: {
+  onBack: () => void;
+  onHome: () => void;
+  onProfile: () => void;
+  onCreatePuzzle: () => void;
+  receivedPuzzleUri: string | null;
+  sentPuzzleUri: string | null;
+  solvedPreviewUri: string | null;
+}) {
+  const [activePuzzleBoxTab, setActivePuzzleBoxTab] = useState<'received' | 'sent'>('received');
+  const unsolvedPuzzles: HomePuzzleTileItem[] = [
+    {
+      id: 'box-practice',
+      source: mainPracticePuzzleAsset,
+      label: '연습용 퍼즐',
+      badge: 'practice',
+      imageStyle: styles.homePuzzlePracticeImage,
+    },
+    {
+      id: 'box-pink-gift',
+      source: mainPinkGiftPuzzleAsset,
+      label: '친구가 보낸 퍼즐',
+      badge: 'newPink',
+      imageStyle: styles.homePuzzleGiftImage,
+    },
+    receivedPuzzleUri
+      ? {
+          id: 'box-live-puzzle',
+          source: mainReceivedPurplePuzzleAsset,
+          backgroundSource: { uri: receivedPuzzleUri },
+          backgroundStyle: styles.homeReceivedPuzzleBackgroundImage,
+          label: '친구가 보낸 퍼즐',
+          badge: 'newPurple',
+          imageStyle: styles.homeReceivedPurplePuzzleImage,
+        }
+      : {
+          id: 'box-yellow-gift',
+          source: mainYellowGiftPuzzleAsset,
+          label: '친구가 보낸 퍼즐',
+          badge: 'newYellow',
+          imageStyle: styles.homePuzzleGiftImage,
+        },
+  ];
+  const solvedPuzzles: HomePhotoTileItem[] = [
+    { id: 'box-solved-main', variant: 'photo', source: solvedPreviewUri ? { uri: solvedPreviewUri } : mainSentBeachFriendsCardAsset, imageStyle: styles.puzzleBoxSolvedImage },
+  ];
+  const sentPuzzles: HomePhotoTileItem[] = [
+    {
+      id: 'box-sent-flowers',
+      variant: 'photo',
+      source: mainSentFlowerCardBaseAsset,
+      imageStyle: styles.puzzleBoxSentFlowerImage,
+      overlaySource: mainSentFlowerCardOverlayAsset,
+      overlayStyle: styles.puzzleBoxSentFlowerImageLarge,
+    },
+    { id: 'box-sent-dog', variant: 'photo', source: mainSentDogCardAsset, imageStyle: styles.puzzleBoxSentDogImage },
+    { id: 'box-sent-beach', variant: 'photo', source: mainSentBeachFoodCardAsset, imageStyle: styles.puzzleBoxSentBeachImage },
+  ];
+  const isReceivedTab = activePuzzleBoxTab === 'received';
+
+  return (
+    <View style={styles.puzzleBoxRoot}>
+      <View style={styles.puzzleBoxTopBar}>
+        <View style={styles.homeStatusBar}>
+          <Image source={mainIosStatusLeftIconAsset} style={styles.homeStatusLeft} resizeMode="contain" />
+          <Image source={mainIosStatusRightIconAsset} style={styles.homeStatusRight} resizeMode="contain" />
+        </View>
+        <Pressable onPress={onBack} style={({ pressed }) => [styles.puzzleBoxBackButton, pressed && styles.pressed]}>
+          <Text style={styles.puzzleBoxBackIcon}>‹</Text>
+        </Pressable>
+        <Text style={styles.puzzleBoxTitle}>퍼즐함</Text>
+      </View>
+
+      <View style={styles.puzzleBoxTabBar}>
+        <Pressable onPress={() => setActivePuzzleBoxTab('received')} style={({ pressed }) => [styles.puzzleBoxTabButton, styles.puzzleBoxTabButtonReceived, pressed && styles.pressed]}>
+          <Text style={[styles.puzzleBoxTabText, isReceivedTab ? styles.puzzleBoxTabTextActive : styles.puzzleBoxTabTextInactive]}>받은 퍼즐</Text>
+        </Pressable>
+        <Pressable onPress={() => setActivePuzzleBoxTab('sent')} style={({ pressed }) => [styles.puzzleBoxTabButton, styles.puzzleBoxTabButtonSent, pressed && styles.pressed]}>
+          <Text style={[styles.puzzleBoxTabText, !isReceivedTab ? styles.puzzleBoxTabTextActive : styles.puzzleBoxTabTextInactive]}>보낸 퍼즐</Text>
+        </Pressable>
+        <View style={[styles.puzzleBoxTabIndicator, !isReceivedTab && styles.puzzleBoxTabIndicatorSent]} />
+      </View>
+
+      {isReceivedTab ? (
+        <>
+          <Text style={styles.puzzleBoxUnsolvedTitle}>아직 안 푼 퍼즐</Text>
+          <View style={styles.puzzleBoxUnsolvedHighlight} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.puzzleBoxUnsolvedRow} contentContainerStyle={styles.puzzleBoxRowContent}>
+            {unsolvedPuzzles.map((item) => (
+              <HomePuzzleTile key={item.id} item={item} />
+            ))}
+          </ScrollView>
+
+          <Text style={styles.puzzleBoxSolvedTitle}>최근 푼 퍼즐</Text>
+          <View style={styles.puzzleBoxSolvedCard}>
+            <Image source={solvedPuzzles[0].source} style={solvedPuzzles[0].imageStyle} resizeMode="cover" />
+            <View style={styles.puzzleBoxPublicBadge}>
+              <Text style={styles.puzzleBoxPublicBadgeText}>공개</Text>
+            </View>
+          </View>
+        </>
+      ) : (
+        <View style={styles.puzzleBoxSentGrid}>
+          {sentPuzzles.map((item) => (
+            <HomePhotoTile key={item.id} item={item} tileStyle={styles.puzzleBoxSentTile} />
+          ))}
+        </View>
+      )}
+      <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.puzzleBoxCreateButton, pressed && styles.pressed]}>
+        <Text style={styles.puzzleBoxCreateButtonText}>+</Text>
+      </Pressable>
+
+      <HomeTabBar activeTab="puzzleBox" onHome={onHome} onPuzzleBox={() => undefined} onProfile={onProfile} />
+    </View>
+  );
+}
+
+function ReceivedPuzzleNotice({
+  onClose,
+  onLater,
+  onStart,
+}: {
+  onClose: () => void;
+  onLater: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <View style={styles.receivedNoticeOverlay}>
+      <View style={styles.receivedNoticeCard}>
+        <Pressable onPress={onClose} style={({ pressed }) => [styles.receivedNoticeClose, pressed && styles.pressed]}>
+          <Image source={mainModalCloseIconAsset} style={styles.receivedNoticeCloseIcon} resizeMode="contain" />
+        </Pressable>
+        <Text style={styles.receivedNoticeTitle}>
+          <Text style={styles.receivedNoticeTitleAccent}>퍼즐</Text>
+          이 왔어요!{'\n'}지금 바로 맞춰볼까요?
+        </Text>
+        <View style={styles.receivedNoticeShadow} />
+        <Image source={mainReceivedNotificationPuzzleAsset} style={styles.receivedNoticePuzzle} resizeMode="contain" />
+        <Pressable onPress={onLater} style={({ pressed }) => [styles.receivedNoticeLaterButton, pressed && styles.pressed]}>
+          <Text style={styles.receivedNoticeLaterText}>아니요, 다음에 할게요</Text>
+        </Pressable>
+        <Pressable onPress={onStart} style={({ pressed }) => [styles.receivedNoticeStartButton, pressed && styles.pressed]}>
+          <Text style={styles.receivedNoticeStartText}>네! 지금 할래요</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function HomeTabBar({
+  activeTab,
+  onHome,
+  onPuzzleBox,
+  onProfile,
+}: {
+  activeTab: 'home' | 'puzzleBox' | 'profile';
+  onHome: () => void;
+  onPuzzleBox: () => void;
+  onProfile: () => void;
+}) {
+  const isHomeActive = activeTab === 'home';
+  const isPuzzleBoxActive = activeTab === 'puzzleBox';
+  const isProfileActive = activeTab === 'profile';
+
   return (
     <View style={styles.homeTabBar}>
-      <View style={[styles.homeTabItem, styles.homeTabItemHome]}>
-        <Image source={{ uri: tabHomeIconAsset }} style={styles.homeTabHomeIcon} resizeMode="contain" />
-        <Text style={[styles.homeTabLabel, styles.homeTabLabelActive]}>홈</Text>
-      </View>
-      <View style={[styles.homeTabItem, styles.homeTabItemPuzzle]}>
-        <Image source={{ uri: tabPuzzleIconAsset }} style={styles.homeTabPuzzleIcon} resizeMode="contain" />
-        <Text style={styles.homeTabLabel}>퍼즐함</Text>
-      </View>
-      <View style={[styles.homeTabItem, styles.homeTabItemProfile]}>
-        <Image source={{ uri: tabProfileIconAsset }} style={styles.homeTabProfileIcon} resizeMode="contain" />
-        <Text style={styles.homeTabLabel}>내 정보</Text>
-      </View>
+      <Pressable accessibilityRole="button" onPress={onHome} onPressIn={onHome} style={({ pressed }) => [styles.homeTabButton, pressed && styles.pressed]}>
+        <Image source={mainTabHomeFilledIconAsset} style={[styles.homeTabHomeIcon, !isHomeActive && styles.homeTabIconInactive]} resizeMode="contain" />
+        <Text style={[styles.homeTabLabel, isHomeActive ? styles.homeTabLabelActive : styles.homeTabLabelInactive]}>홈</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" onPress={onPuzzleBox} onPressIn={onPuzzleBox} style={({ pressed }) => [styles.homeTabButton, pressed && styles.pressed]}>
+        <Image source={mainTabBookHalfIconAsset} style={styles.homeTabBookIcon} resizeMode="contain" />
+        <Image source={mainTabPuzzleFilledIconAsset} style={[styles.homeTabPuzzleIcon, styles.homeTabPuzzleIconFlow, !isPuzzleBoxActive && styles.homeTabIconInactive]} resizeMode="contain" />
+        <Text style={[styles.homeTabLabel, isPuzzleBoxActive ? styles.homeTabLabelActive : styles.homeTabLabelInactive]}>퍼즐함</Text>
+      </Pressable>
+      <Pressable accessibilityRole="button" onPress={onProfile} onPressIn={onProfile} style={({ pressed }) => [styles.homeTabButton, pressed && styles.pressed]}>
+        <Image source={mainTabBookOutlineIconAsset} style={styles.homeTabBookOutlineIcon} resizeMode="contain" />
+        <Image source={mainTabPersonFilledIconAsset} style={[styles.homeTabProfileIcon, styles.homeTabProfileIconFlow, !isProfileActive && styles.homeTabIconInactive]} resizeMode="contain" />
+        <Text style={[styles.homeTabLabel, isProfileActive ? styles.homeTabLabelActive : styles.homeTabLabelInactive]}>내 정보</Text>
+      </Pressable>
       <View style={styles.homeTabIndicator} />
     </View>
   );
@@ -1004,11 +1667,11 @@ function PuzzleDecorateScreen({
           onResponderMove={tool === 'draw' ? continueDrawing : moveActiveText}
         />
         <Pressable onPress={cycleGridSize} style={({ pressed }) => [styles.puzzleSizeBadge, pressed && styles.pressed]}>
-          <Image source={{ uri: puzzleBadgeIconAsset }} style={styles.puzzleBadgeIcon} resizeMode="contain" />
+          <Image source={puzzleSizeBadgeIconAsset} style={styles.puzzleBadgeIcon} resizeMode="contain" />
           <Text style={styles.puzzleBadgeText}>{gridSize}X{gridSize}</Text>
         </Pressable>
         <Pressable onPress={onChangePhoto} style={({ pressed }) => [styles.imageBadge, pressed && styles.pressed]} hitSlop={8}>
-          <Image source={{ uri: photoBadgeIconAsset }} style={styles.imageBadgeIcon} resizeMode="contain" />
+          <Text style={styles.imageBadgeText}>AI</Text>
         </Pressable>
       </View>
 
@@ -1082,6 +1745,55 @@ function PuzzleDecorateScreen({
         style={({ pressed }) => [styles.completeButton, pressed && styles.pressed]}
       >
         <Text style={styles.primaryText}>퍼즐 완성</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function AiDecorateScreen({
+  photoUri,
+  onBack,
+  onSkip,
+  onApply,
+}: {
+  photoUri: string;
+  onBack: () => void;
+  onSkip: () => void;
+  onApply: () => void;
+}) {
+  const [prompt, setPrompt] = useState('');
+  const previewSource: ImageSourcePropType = photoUri === AI_PUZZLE_ARTWORK_URI ? aiPromptPreviewAsset : { uri: photoUri };
+
+  return (
+    <View style={styles.fill}>
+      <TopBar title="AI로 꾸미기" onBack={onBack} withBorder />
+
+      <View style={styles.aiDecoratePreview}>
+        <Image source={previewSource} style={styles.aiDecoratePreviewImage} resizeMode="cover" />
+      </View>
+
+      <Text style={styles.aiDecorateTitle}>사진을 어떻게 바꿔볼까요?</Text>
+      <Text style={styles.aiDecorateHelper}>원하는 모습을 자유롭게 적어주세요!</Text>
+
+      <View style={styles.aiPromptBox}>
+        <TextInput
+          value={prompt}
+          onChangeText={(value) => setPrompt(value.slice(0, 50))}
+          placeholder="예) 배경을 별이 가득한 밤하늘로 바꿔줘"
+          placeholderTextColor="rgba(121, 121, 121, 0.49)"
+          multiline
+          maxLength={50}
+          style={styles.aiPromptInput}
+        />
+        <Image source={aiPromptSparkleAsset} style={styles.aiPromptSparkle} resizeMode="contain" />
+        <Text style={styles.aiPromptCount}>{prompt.length}/50</Text>
+      </View>
+
+      <Pressable onPress={onApply} style={({ pressed }) => [styles.aiApplyButton, pressed && styles.pressed]}>
+        <Text style={styles.aiApplyButtonText}>AI로 바꾸기</Text>
+      </Pressable>
+      <Pressable onPress={onSkip} style={({ pressed }) => [styles.aiSkipButton, pressed && styles.pressed]}>
+        <Text style={styles.aiSkipText}>건너뛰기</Text>
       </Pressable>
     </View>
   );
