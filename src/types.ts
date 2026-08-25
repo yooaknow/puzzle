@@ -14,7 +14,21 @@ export const GRID_TOP = 146;
 export const GRID_GAP_X = 12;
 export const GRID_GAP_Y = 14;
 
-export type ScreenName = 'splash' | 'received' | 'login' | 'signup' | 'card' | 'photos' | 'puzzle' | 'complete' | 'solve' | 'solveComplete';
+export type ScreenName =
+  | 'splash'
+  | 'received'
+  | 'login'
+  | 'signup'
+  | 'linkCreated'
+  | 'card'
+  | 'photos'
+  | 'puzzle'
+  | 'aiDecorate'
+  | 'complete'
+  | 'solve'
+  | 'solveComplete'
+  | 'puzzleBox'
+  | 'profile';
 export type GridSize = 3 | 4 | 5;
 export type Point = { x: number; y: number };
 export type DrawStroke = { points: Point[]; color: string; width: number };
