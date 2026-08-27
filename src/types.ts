@@ -17,6 +17,7 @@ export const GRID_GAP_Y = 14;
 export type ScreenName =
   | 'splash'
   | 'received'
+  | 'receivedSplash'
   | 'login'
   | 'signup'
   | 'linkCreated'

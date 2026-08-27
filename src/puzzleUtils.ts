@@ -223,6 +223,13 @@ export function getShareUrl(puzzleId?: string) {
   return puzzleId ? `${baseUrl}?shared=1&puzzleId=${encodeURIComponent(puzzleId)}` : `${baseUrl}?shared=1`;
 }
 
+export function getProfileShareUrl(profileSlug: string) {
+  const webLocation = (globalThis as unknown as { location?: { href?: string } }).location;
+  const currentUrl = webLocation?.href ?? 'https://puzzlw.app';
+  const baseUrl = currentUrl.split('?')[0].split('#')[0];
+  return `${baseUrl}?shared=1&user=${encodeURIComponent(profileSlug)}`;
+}
+
 export function isSharedLink() {
   const webLocation = (globalThis as unknown as { location?: { search?: string } }).location;
   return webLocation?.search?.includes('shared=1') ?? false;
@@ -257,7 +264,7 @@ export function getStoredPuzzleGridSize(puzzleId?: string | null): GridSize {
   try {
     const storage = getStorage();
     const storedValue = puzzleId
-      ? storage?.getItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`) ?? storage?.getItem(SHARE_PUZZLE_GRID_SIZE_KEY)
+      ? storage?.getItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`)
       : storage?.getItem(SHARE_PUZZLE_GRID_SIZE_KEY);
     return parseGridSize(storedValue);
   } catch {
@@ -269,7 +276,7 @@ export function getStoredPuzzleSourceUri(puzzleId?: string | null) {
   try {
     const storage = getStorage();
     if (puzzleId) {
-      return storage?.getItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`) ?? storage?.getItem(SHARE_PUZZLE_SOURCE_KEY) ?? null;
+      return storage?.getItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`) ?? null;
     }
     return storage?.getItem(SHARE_PUZZLE_SOURCE_KEY) ?? null;
   } catch {
@@ -281,7 +288,7 @@ export function getStoredPuzzleUri(puzzleId?: string | null) {
   try {
     const storage = getStorage();
     if (puzzleId) {
-      return storage?.getItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`) ?? storage?.getItem(SHARE_PUZZLE_KEY) ?? null;
+      return storage?.getItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`) ?? null;
     }
     return storage?.getItem(SHARE_PUZZLE_KEY) ?? null;
   } catch {

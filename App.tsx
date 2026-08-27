@@ -113,6 +113,7 @@ import {
   getStoredPuzzleGridSize,
   getStoredPuzzleSourceUri,
   getStoredPuzzleUri,
+  getProfileShareUrl,
   isSharedLink,
   saveStoredPuzzleUri,
   sliderOffsetFromWidth,
@@ -142,7 +143,12 @@ type AuthCredentials = {
 };
 
 export default function App() {
-  const [screen, setScreen] = useState<ScreenName>(() => (isSharedLink() ? 'received' : 'splash'));
+  const [screen, setScreen] = useState<ScreenName>(() => {
+    if (getSharedPuzzleId()) {
+      return 'receivedSplash';
+    }
+    return isSharedLink() ? 'received' : 'splash';
+  });
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [completedPuzzleUri, setCompletedPuzzleUri] = useState<string | null>(null);
@@ -251,14 +257,14 @@ export default function App() {
       return;
     }
     if (screen === 'solve') {
-      setScreen('received');
+      setScreen(sharedPuzzleId ? 'receivedSplash' : 'received');
       return;
     }
     if (screen === 'solveComplete') {
       setScreen('solve');
       return;
     }
-    if (screen === 'received') {
+    if (screen === 'received' || screen === 'receivedSplash') {
       setScreen('splash');
       return;
     }
@@ -279,6 +285,7 @@ export default function App() {
       <View style={[styles.screen, { transform: [{ scale }] }]}>
         {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen(currentAccount ? 'card' : 'login')} />}
         {screen === 'received' && <ReceivedLinkScreen recipientName="OO" onCreatePuzzle={openPhotoPicker} onOpenPuzzle={() => setScreen('solve')} />}
+        {screen === 'receivedSplash' && <ReceivedSplashScreen onCheckPuzzle={() => setScreen('solve')} />}
         {screen === 'login' && (
           <AuthScreen
             mode="login"
@@ -427,6 +434,31 @@ function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () =
       </Pressable>
       <Pressable onPress={onLogin} style={({ pressed }) => [styles.splashLoginButton, pressed && styles.pressed]}>
         <Text style={styles.splashLoginText}>로그인 · 내 퍼즐함</Text>
+      </Pressable>
+    </View>
+  );
+}
+
+function ReceivedSplashScreen({ onCheckPuzzle }: { onCheckPuzzle: () => void }) {
+  return (
+    <View style={styles.splashRoot}>
+      <View style={styles.splashHeroPuzzleWrap}>
+        <Image source={splashYellowPuzzleAsset} style={styles.splashHeroPuzzle} resizeMode="cover" />
+      </View>
+      <Image source={splashBlackArmAsset} style={styles.splashArm} resizeMode="cover" />
+
+      <View style={styles.splashCopyBlock}>
+        <Text style={styles.splashHeadline}>누군가{'\n'}당신에게{'\n'}하고 싶은 말이{'\n'}있대요.</Text>
+        <Text style={styles.splashBrand}>푸러봐</Text>
+      </View>
+
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.splashPinkPuzzle} cropStyle={styles.splashPinkCrop} opacity={0.4} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.splashPurplePuzzle} cropStyle={styles.splashPurpleCrop} opacity={0.7} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.splashMintPuzzle} cropStyle={styles.splashMintCrop} opacity={0.4} />
+
+      <Pressable onPress={onCheckPuzzle} style={({ pressed }) => [styles.receivedButton, pressed && styles.pressed]}>
+        <Text style={styles.primaryText}>퍼즐 확인하기</Text>
+        <Image source={splashChevronRightIconAsset} style={styles.chevronIcon} resizeMode="contain" />
       </Pressable>
     </View>
   );
@@ -610,7 +642,7 @@ function SharedPublicPuzzleModal({
 
 function LinkCreatedScreen({ account, onBack, onDone }: { account: AuthAccount; onBack: () => void; onDone: () => void }) {
   const shareProfileLink = async () => {
-    const url = getShareUrl(account.slug);
+    const url = getProfileShareUrl(account.slug);
     try {
       const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
       if (webNavigator?.share) {
@@ -3036,89 +3068,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0,
     includeFontPadding: false,
   },
-  receivedHeroPuzzleWrap: {
-    position: 'absolute',
-    left: 67,
-    top: 93,
-    width: 267,
-    height: 247,
-    overflow: 'hidden',
-  },
-  receivedHeroPuzzle: {
-    position: 'absolute',
-    left: -69,
-    top: 0,
-    width: 370,
-    height: 247,
-  },
-  receivedArm: {
-    position: 'absolute',
-    left: -2,
-    top: 235,
-    width: 164,
-    height: 129,
-  },
-  receivedCopyBlock: {
-    position: 'absolute',
-    left: 38,
-    top: 415,
-  },
-  receivedHeadline: {
-    color: '#030303',
-    fontSize: 30,
-    lineHeight: 43,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  receivedBrand: {
-    marginTop: 23,
-    color: '#b38cfb',
-    fontSize: 40,
-    lineHeight: 46,
-    fontWeight: '900',
-    letterSpacing: 0,
-  },
-  receivedPinkPuzzle: {
-    left: 333,
-    top: 377,
-    width: 56,
-    height: 56,
-    transform: [{ rotate: '19.1deg' }],
-  },
-  receivedPinkCrop: {
-    left: -107,
-    top: -9,
-    width: 198,
-    height: 133,
-  },
-  receivedPurplePuzzle: {
-    left: 333,
-    top: 450,
-    width: 105,
-    height: 90,
-    transform: [{ rotate: '-12.42deg' }],
-  },
-  receivedPurpleCrop: {
-    left: -57,
-    top: -109,
-    width: 327,
-    height: 218,
-  },
-  receivedMintPuzzle: {
-    left: -8,
-    top: 797,
-    width: 118,
-    height: 101,
-  },
-  receivedMintCrop: {
-    left: -51,
-    top: -16,
-    width: 340,
-    height: 228,
-  },
   receivedButton: {
     position: 'absolute',
-    left: 29,
+    left: 23,
     top: 735,
     width: designSystem.size.buttonWidth,
     height: designSystem.size.buttonHeight,
