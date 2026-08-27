@@ -28,6 +28,8 @@ import {
   cardStartPuzzleFrameAsset,
   cardStartPuzzleSheetAsset,
   celebrationAsset,
+  decoratePencilIconAsset,
+  decorateTextIconAsset,
   mainBannerCharacterAsset,
   mainEmptySentEnvelopeAsset,
   mainHeartFilledIconAsset,
@@ -57,6 +59,7 @@ import {
   loginPuzzleAsset,
   puzzleSizeBadgeIconAsset,
   redoIconAsset,
+  solveCounterPuzzleIconAsset,
   sharedPublicBeachFriendsCardAsset,
   sharedPublicCatCardAsset,
   sharedPublicDogCardAsset,
@@ -1685,10 +1688,20 @@ function PuzzleDecorateScreen({
       <View style={styles.puzzleControls}>
         <View style={styles.toolTabs}>
           <Pressable onPress={() => setTool('draw')} style={[styles.toolTab, tool === 'draw' && styles.activeToolTab]}>
-            <Text style={[styles.toolTabText, tool === 'draw' && styles.activeToolTabText]}>✎ 그리기</Text>
+            <Image
+              source={decoratePencilIconAsset}
+              style={[styles.toolTabPencilIcon, { tintColor: tool === 'draw' ? designSystem.color.primary : designSystem.color.muted }]}
+              resizeMode="contain"
+            />
+            <Text style={[styles.toolTabText, tool === 'draw' && styles.activeToolTabText]}>그리기</Text>
           </Pressable>
           <Pressable onPress={() => setTool('text')} style={[styles.toolTab, tool === 'text' && styles.activeToolTab]}>
-            <Text style={[styles.toolTabText, tool === 'text' && styles.activeToolTabText]}>T 텍스트</Text>
+            <Image
+              source={decorateTextIconAsset}
+              style={[styles.toolTabTextIcon, { tintColor: tool === 'text' ? designSystem.color.primary : designSystem.color.muted }]}
+              resizeMode="contain"
+            />
+            <Text style={[styles.toolTabText, tool === 'text' && styles.activeToolTabText]}>텍스트</Text>
           </Pressable>
         </View>
         {tool === 'draw' ? (
@@ -1712,7 +1725,7 @@ function PuzzleDecorateScreen({
         style={({ pressed }) => [styles.undoButton, pressed && styles.pressed]}
         hitSlop={8}
       >
-        <Image source={{ uri: undoIconAsset }} style={[styles.historyIcon, styles.undoIcon]} resizeMode="contain" />
+        <Image source={undoIconAsset} style={styles.historyIcon} resizeMode="contain" />
       </Pressable>
       <Pressable
         onPress={() => {
@@ -1728,7 +1741,7 @@ function PuzzleDecorateScreen({
         style={({ pressed }) => [styles.redoButton, pressed && styles.pressed]}
         hitSlop={8}
       >
-        <Image source={{ uri: redoIconAsset }} style={[styles.historyIcon, styles.redoIcon]} resizeMode="contain" />
+        <Image source={redoIconAsset} style={styles.historyIcon} resizeMode="contain" />
       </Pressable>
       <Pressable
         onPress={() => {
@@ -1741,7 +1754,7 @@ function PuzzleDecorateScreen({
         style={({ pressed }) => [styles.trashButton, pressed && styles.pressed]}
         hitSlop={8}
       >
-        <Image source={{ uri: trashIconAsset }} style={styles.trashIcon} resizeMode="contain" />
+        <Image source={trashIconAsset} style={styles.trashIcon} resizeMode="contain" />
       </Pressable>
 
       <Pressable
@@ -2039,7 +2052,7 @@ function PuzzleSolveScreen({
       <TopBar title="퍼즐 맞추기" onBack={onBack} withBorder />
 
       <View style={styles.solveCounter}>
-        <Image source={puzzleSizeBadgeIconAsset} style={styles.solveCounterIcon} resizeMode="contain" />
+        <Image source={solveCounterPuzzleIconAsset} style={styles.solveCounterIcon} resizeMode="contain" />
         <Text style={styles.solveCounterText}>
           <Text style={styles.solveCounterDone}>{placedCount}</Text>
           <Text style={styles.solveCounterTotal}>/{totalPieces}</Text>
@@ -4375,7 +4388,7 @@ const styles = StyleSheet.create({
   },
   solveCounterIcon: {
     width: 23,
-    height: 18,
+    height: 23,
   },
   solveCounterText: {
     fontSize: 16,
@@ -4772,8 +4785,18 @@ const styles = StyleSheet.create({
   toolTab: {
     width: 165,
     height: 43,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
+  },
+  toolTabPencilIcon: {
+    width: 14,
+    height: 14,
+  },
+  toolTabTextIcon: {
+    width: 12,
+    height: 13,
   },
   activeToolTab: {
     backgroundColor: designSystem.color.background,
@@ -4900,7 +4923,7 @@ const styles = StyleSheet.create({
   },
   undoButton: {
     position: 'absolute',
-    left: 279,
+    left: 271,
     top: 427,
     width: 25,
     height: 25,
@@ -4909,7 +4932,7 @@ const styles = StyleSheet.create({
   },
   redoButton: {
     position: 'absolute',
-    left: 309,
+    left: 301,
     top: 427,
     width: 25,
     height: 25,
@@ -4918,28 +4941,20 @@ const styles = StyleSheet.create({
   },
   trashButton: {
     position: 'absolute',
-    left: 343,
-    top: 427,
+    left: 336,
+    top: 430,
     width: 25,
     height: 25,
     alignItems: 'center',
     justifyContent: 'center',
   },
   historyIcon: {
-    width: 16,
-    height: 16,
-    opacity: 0.72,
-  },
-  undoIcon: {
-    transform: [{ rotate: '90deg' }],
-  },
-  redoIcon: {
-    transform: [{ rotate: '-90deg' }],
+    width: 25,
+    height: 25,
   },
   trashIcon: {
     width: 17,
     height: 15,
-    opacity: 0.72,
   },
   completeButton: {
     position: 'absolute',
