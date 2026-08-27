@@ -168,7 +168,9 @@ export default function App() {
   const storedPuzzleSourceUri = useMemo(() => getStoredPuzzleSourceUri(sharedPuzzleId), [sharedPuzzleId]);
   const storedPuzzleGridSize = useMemo(() => getStoredPuzzleGridSize(sharedPuzzleId), [sharedPuzzleId]);
   const activeSolvePuzzleUri = completedPuzzleUri ?? storedPuzzleUri ?? solveSamplePuzzle;
-  const activeSolvePuzzleSourceUri = completedPuzzleSourceUri ?? storedPuzzleSourceUri ?? completedPuzzleUri ?? storedPuzzleUri ?? solveSamplePuzzle;
+  // 퍼즐 조각은 반드시 선이 그려지지 않은 원본에서 잘라낸다.
+  // (선이 그려진 puzzleUri로 넘어가면 조각마다 칸 나누는 선이 박혀버린다)
+  const activeSolvePuzzleSourceUri = completedPuzzleSourceUri ?? storedPuzzleSourceUri ?? solveSamplePuzzle;
   const activeSolveGridSize = completedPuzzleUri ? completedGridSize : storedPuzzleGridSize;
   const [viewportSize, setViewportSize] = useState({ width, height });
   const scale = getResponsiveScale(viewportSize.width, viewportSize.height);

@@ -243,21 +243,56 @@ export function getSharedPuzzleId() {
 }
 
 export function saveStoredPuzzleUri(puzzleUri: string, puzzleId?: string, puzzleSourceUri?: string, gridSize: GridSize = 3) {
-  try {
-    const storage = getStorage();
-    storage?.setItem(SHARE_PUZZLE_GRID_SIZE_KEY, String(gridSize));
-    if (puzzleId) {
-      storage?.setItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`, String(gridSize));
-    }
-    storage?.setItem(SHARE_PUZZLE_KEY, puzzleUri);
-    storage?.setItem(SHARE_PUZZLE_SOURCE_KEY, puzzleSourceUri ?? puzzleUri);
-    if (puzzleId) {
-      storage?.setItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`, puzzleUri);
-      storage?.setItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`, puzzleSourceUri ?? puzzleUri);
-    }
-  } catch {
-    // Local storage can fail for large data URLs; sharing still falls back to the sample puzzle.
+  const storage = getStorage();
+  if (!storage) {
+    return;
   }
+
+  const write = () => {
+    // 공유 링크가 읽는 값을 먼저 쓴다. 저장 용량이 모자라 중간에 끊겨도
+    // 링크로 들어온 사람이 선이 그려진 이미지를 원본 대신 받는 일이 없도록.
+    if (puzzleId) {
+      storage.setItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`, puzzleSourceUri ?? puzzleUri);
+      storage.setItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`, puzzleUri);
+      storage.setItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`, String(gridSize));
+    }
+    storage.setItem(SHARE_PUZZLE_SOURCE_KEY, puzzleSourceUri ?? puzzleUri);
+    storage.setItem(SHARE_PUZZLE_KEY, puzzleUri);
+    storage.setItem(SHARE_PUZZLE_GRID_SIZE_KEY, String(gridSize));
+  };
+
+  try {
+    write();
+  } catch {
+    // 퍼즐 이미지가 data URL이라 몇 개만 쌓여도 용량이 찬다.
+    // 예전에 만든 퍼즐을 비우고 한 번만 다시 시도한다.
+    try {
+      clearStoredPuzzles(storage, puzzleId);
+      write();
+    } catch {
+      // 그래도 안 되면 저장을 포기한다 (공유 링크는 샘플 퍼즐로 열린다).
+    }
+  }
+}
+
+function clearStoredPuzzles(storage: WebStorage, keepPuzzleId?: string) {
+  const keptKeys = keepPuzzleId
+    ? [
+        `${SHARE_PUZZLE_PREFIX}${keepPuzzleId}`,
+        `${SHARE_PUZZLE_SOURCE_PREFIX}${keepPuzzleId}`,
+        `${SHARE_PUZZLE_GRID_SIZE_PREFIX}${keepPuzzleId}`,
+      ]
+    : [];
+  const staleKeys: string[] = [];
+
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith('puzzlw:shared') && !keptKeys.includes(key)) {
+      staleKeys.push(key);
+    }
+  }
+
+  staleKeys.forEach((key) => storage.removeItem(key));
 }
 
 export function getStoredPuzzleGridSize(puzzleId?: string | null): GridSize {
