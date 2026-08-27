@@ -6,7 +6,7 @@ export const SHARE_PUZZLE_GRID_SIZE_KEY = 'puzzlw:sharedPuzzleGridSize';
 export const SHARE_PUZZLE_GRID_SIZE_PREFIX = 'puzzlw:sharedPuzzleGridSize:';
 
 export const DESIGN_WIDTH = 390;
-export const DESIGN_HEIGHT = 844;
+export const DESIGN_HEIGHT = 825;
 export const TILE_WIDTH = 106;
 export const TILE_HEIGHT = 140;
 export const GRID_LEFT = 30;

@@ -31,8 +31,6 @@ import {
   mainBannerCharacterAsset,
   mainEmptySentEnvelopeAsset,
   mainHeartFilledIconAsset,
-  mainIosStatusLeftIconAsset,
-  mainIosStatusRightIconAsset,
   mainLogoAsset,
   mainMenuTextRightIconAsset,
   mainNotificationBellIconAsset,
@@ -408,11 +406,7 @@ export default function App() {
 
 function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () => void }) {
   return (
-    <View style={styles.fill}>
-      <View style={styles.splashStatusBar}>
-        <Image source={mainIosStatusLeftIconAsset} style={styles.splashStatusLeft} resizeMode="contain" />
-        <Image source={mainIosStatusRightIconAsset} style={styles.splashStatusRight} resizeMode="contain" />
-      </View>
+    <View style={styles.splashRoot}>
       <View style={styles.splashHeroPuzzleWrap}>
         <Image source={splashYellowPuzzleAsset} style={styles.splashHeroPuzzle} resizeMode="cover" />
       </View>
@@ -539,12 +533,6 @@ function ReceivedLinkScreen({
 
   return (
     <View style={styles.sharedLinkRoot}>
-      <View style={styles.sharedLinkStatusLeft}>
-        <Image source={mainIosStatusLeftIconAsset} style={styles.sharedLinkStatusLeftIcon} resizeMode="contain" />
-      </View>
-      <View style={styles.sharedLinkStatusRight}>
-        <Image source={mainIosStatusRightIconAsset} style={styles.sharedLinkStatusRightIcon} resizeMode="contain" />
-      </View>
       <Image source={mainLogoAsset} style={styles.sharedLinkLogo} resizeMode="contain" />
 
       <View style={styles.sharedLinkBanner}>
@@ -1036,11 +1024,6 @@ function HomeScreen({
 
   return (
     <View style={styles.homeRoot}>
-      <View style={styles.homeStatusBar}>
-        <Image source={mainIosStatusLeftIconAsset} style={styles.homeStatusLeft} resizeMode="contain" />
-        <Image source={mainIosStatusRightIconAsset} style={styles.homeStatusRight} resizeMode="contain" />
-      </View>
-
       <Image source={mainLogoAsset} style={styles.homeLogo} resizeMode="contain" />
       <Image source={mainMenuTextRightIconAsset} style={styles.homeMenuIcon} resizeMode="contain" />
       <Image source={mainNotificationBellIconAsset} style={styles.homeBellIcon} resizeMode="contain" />
@@ -1182,10 +1165,6 @@ function ProfileScreen({
   return (
     <View style={styles.profileRoot}>
       <View style={styles.profileTopBar}>
-        <View style={styles.homeStatusBar}>
-          <Image source={mainIosStatusLeftIconAsset} style={styles.homeStatusLeft} resizeMode="contain" />
-          <Image source={mainIosStatusRightIconAsset} style={styles.homeStatusRight} resizeMode="contain" />
-        </View>
         <Pressable onPress={onBack} style={({ pressed }) => [styles.profileBackButton, pressed && styles.pressed]}>
           <Text style={styles.profileBackIcon}>‹</Text>
         </Pressable>
@@ -1318,10 +1297,6 @@ function PuzzleBoxScreen({
   return (
     <View style={styles.puzzleBoxRoot}>
       <View style={styles.puzzleBoxTopBar}>
-        <View style={styles.homeStatusBar}>
-          <Image source={mainIosStatusLeftIconAsset} style={styles.homeStatusLeft} resizeMode="contain" />
-          <Image source={mainIosStatusRightIconAsset} style={styles.homeStatusRight} resizeMode="contain" />
-        </View>
         <Pressable onPress={onBack} style={({ pressed }) => [styles.puzzleBoxBackButton, pressed && styles.pressed]}>
           <Text style={styles.puzzleBoxBackIcon}>‹</Text>
         </Pressable>
@@ -2346,6 +2321,11 @@ function getResponsiveScale(width: number, height: number) {
   return Math.min(width / designSystem.size.screenWidth, height / designSystem.size.screenHeight);
 }
 
+// 피그마 화면(402x874)은 맨 위에 폰이 직접 그리는 상태바 자리를 비워두고 있다.
+// 앱 캔버스는 그 아래에서 시작하므로 그 높이만큼 화면을 위로 끌어올린다.
+const STATUS_STRIP = 49;
+const FRAME_HEIGHT = DESIGN_HEIGHT + STATUS_STRIP;
+
 const styles = StyleSheet.create({
   root: {
     flex: 1,
@@ -2364,34 +2344,20 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: designSystem.color.background,
   },
+  splashRoot: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -STATUS_STRIP,
+    height: FRAME_HEIGHT,
+    backgroundColor: designSystem.color.background,
+  },
   cropBox: {
     position: 'absolute',
     overflow: 'hidden',
   },
   cropImage: {
     position: 'absolute',
-  },
-  splashStatusBar: {
-    position: 'absolute',
-    left: 0,
-    top: 14,
-    width: 390,
-    height: 47,
-    zIndex: 1,
-  },
-  splashStatusLeft: {
-    position: 'absolute',
-    left: 35,
-    top: 15,
-    width: 36,
-    height: 14,
-  },
-  splashStatusRight: {
-    position: 'absolute',
-    right: 19,
-    top: 16,
-    width: 75,
-    height: 13,
   },
   splashHeroPuzzleWrap: {
     position: 'absolute',
@@ -2671,31 +2637,13 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   sharedLinkRoot: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -STATUS_STRIP,
+    height: FRAME_HEIGHT,
     backgroundColor: '#fbfbfb',
     overflow: 'hidden',
-  },
-  sharedLinkStatusLeft: {
-    position: 'absolute',
-    left: 38,
-    top: 21,
-    width: 54,
-    height: 21,
-  },
-  sharedLinkStatusLeftIcon: {
-    width: 54,
-    height: 21,
-  },
-  sharedLinkStatusRight: {
-    position: 'absolute',
-    left: 314,
-    top: 27,
-    width: 67,
-    height: 12,
-  },
-  sharedLinkStatusRightIcon: {
-    width: 67,
-    height: 12,
   },
   sharedLinkLogo: {
     position: 'absolute',
@@ -3180,29 +3128,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   homeRoot: {
-    flex: 1,
-    backgroundColor: '#fff',
-  },
-  homeStatusBar: {
     position: 'absolute',
     left: 0,
-    top: 14,
-    width: 390,
-    height: 47,
-  },
-  homeStatusLeft: {
-    position: 'absolute',
-    left: 35,
-    top: 15,
-    width: 36,
-    height: 14,
-  },
-  homeStatusRight: {
-    position: 'absolute',
-    right: 19,
-    top: 16,
-    width: 75,
-    height: 13,
+    right: 0,
+    top: -STATUS_STRIP,
+    height: FRAME_HEIGHT,
+    backgroundColor: '#fff',
   },
   homeLogo: {
     position: 'absolute',
@@ -3635,7 +3566,11 @@ const styles = StyleSheet.create({
     includeFontPadding: false,
   },
   profileRoot: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -STATUS_STRIP,
+    height: FRAME_HEIGHT,
     backgroundColor: '#fff',
   },
   profileTopBar: {
@@ -3780,7 +3715,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#e6e7e9',
   },
   puzzleBoxRoot: {
-    flex: 1,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: -STATUS_STRIP,
+    height: FRAME_HEIGHT,
     backgroundColor: '#fff',
   },
   puzzleBoxTopBar: {
