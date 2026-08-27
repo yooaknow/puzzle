@@ -174,8 +174,8 @@ export default function App() {
   const activeSolveGridSize = completedPuzzleUri ? completedGridSize : storedPuzzleGridSize;
   const [viewportSize, setViewportSize] = useState({ width, height });
   const scale = getResponsiveScale(viewportSize.width, viewportSize.height);
-  const screenOffsetX = (viewportSize.width - DESIGN_WIDTH * scale) / 2;
-  const screenOffsetY = (viewportSize.height - DESIGN_HEIGHT * scale) / 2;
+  const screenOffsetX = Math.max(0, (viewportSize.width - DESIGN_WIDTH * scale) / 2);
+  const screenOffsetY = Math.max(0, (viewportSize.height - DESIGN_HEIGHT * scale) / 2);
 
   const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
     const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
@@ -281,131 +281,135 @@ export default function App() {
   return (
     <SafeAreaView style={styles.root} onLayout={handleRootLayout}>
       <StatusBar style="dark" backgroundColor="#fff" />
-      <View style={[styles.screen, { transform: [{ scale }] }]}>
-        {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen(currentAccount ? 'card' : 'login')} />}
-        {screen === 'received' && <ReceivedLinkScreen recipientName="OO" onCreatePuzzle={openPhotoPicker} onOpenPuzzle={() => setScreen('solve')} />}
-        {screen === 'receivedSplash' && <ReceivedSplashScreen onCheckPuzzle={() => setScreen('solve')} />}
-        {screen === 'login' && (
-          <AuthScreen
-            mode="login"
-            onBack={goBack}
-            onSwitchMode={() => setScreen('signup')}
-            onSubmit={handleAuthSubmit}
-          />
-        )}
-        {screen === 'signup' && (
-          <AuthScreen
-            mode="signup"
-            onBack={goBack}
-            onSwitchMode={() => setScreen('login')}
-            onSubmit={handleAuthSubmit}
-          />
-        )}
-        {screen === 'linkCreated' && currentAccount && (
-          <LinkCreatedScreen account={currentAccount} onBack={() => setScreen('card')} onDone={() => setScreen('card')} />
-        )}
-        {screen === 'card' && (
-          currentAccount ? (
-            <HomeScreen
-              account={currentAccount}
-              sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
-              receivedPuzzleUri={storedPuzzleUri}
-              onCreatePuzzle={openPhotoPicker}
-              onOpenReceivedPuzzle={() => setScreen('solve')}
-              onOpenPuzzleBox={() => setScreen('puzzleBox')}
-              onOpenProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
-            />
-          ) : (
-            <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />
-          )
-        )}
-        {screen === 'puzzleBox' && (
-          <PuzzleBoxScreen
-            onBack={() => setScreen('card')}
-            onHome={() => setScreen('card')}
-            onProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
-            onCreatePuzzle={openPhotoPicker}
-            receivedPuzzleUri={storedPuzzleUri}
-            sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
-            solvedPreviewUri={completedPuzzleSourceUri ?? storedPuzzleSourceUri}
-          />
-        )}
-        {screen === 'profile' && currentAccount && (
-          <ProfileScreen
-            account={currentAccount}
-            onBack={() => setScreen('card')}
-            onHome={() => setScreen('card')}
-            onPuzzleBox={() => setScreen('puzzleBox')}
-          />
-        )}
-        {screen === 'photos' && (
-          <PhotoSelectScreen
-            photoUris={photoUris}
-            selectedPhotoIndex={selectedPhotoIndex}
-            onBack={goBack}
-            onPickPhoto={openPhotoPicker}
-            onSelectPhoto={setSelectedPhotoIndex}
-            onMakePuzzle={() => setScreen('puzzle')}
-          />
-        )}
-        {screen === 'puzzle' && selectedPhotoUri && (
-          <PuzzleDecorateScreen
-            photoUri={selectedPhotoUri}
-            screenScale={scale}
-            onBack={goBack}
-            onChangePhoto={() => setScreen('aiDecorate')}
-            onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
-              setCompletedPuzzleUri(puzzleUri);
-              setCompletedPuzzleSourceUri(puzzleSourceUri);
-              setCompletedGridSize(nextGridSize);
-              setCompletedStrokes(strokes);
-              setCompletedTextStickers(textStickers);
-              setScreen('complete');
-            }}
-          />
-        )}
-        {screen === 'aiDecorate' && selectedPhotoUri && (
-          <AiDecorateScreen
-            photoUri={selectedPhotoUri}
-            onBack={() => setScreen('puzzle')}
-            onSkip={() => setScreen('puzzle')}
-            onApply={() => setScreen('puzzle')}
-          />
-        )}
-        {screen === 'complete' && completedPuzzleUri && (
-          <PuzzleCompleteScreen
-            puzzleUri={completedPuzzleUri}
-            puzzleSourceUri={completedPuzzleSourceUri ?? completedPuzzleUri}
-            gridSize={completedGridSize}
-            strokes={completedStrokes}
-            textStickers={completedTextStickers}
-            onBack={goBack}
-          />
-        )}
-        {screen === 'solve' && (
-          <PuzzleSolveScreen
-            puzzleUri={activeSolvePuzzleUri}
-            puzzleSourceUri={activeSolvePuzzleSourceUri}
-            gridSize={activeSolveGridSize}
-            screenScale={scale}
-            screenOffsetX={screenOffsetX}
-            screenOffsetY={screenOffsetY}
-            onBack={goBack}
-            onComplete={(puzzleUri) => {
-              setSolvedPuzzleUri(puzzleUri);
-              setScreen('solveComplete');
-            }}
-          />
-        )}
-        {screen === 'solveComplete' && (
-          <SolvedPuzzleCompleteScreen
-            puzzleUri={solvedPuzzleUri ?? activeSolvePuzzleUri}
-            gridSize={activeSolveGridSize}
-            onBack={goBack}
-            onLogin={() => setScreen('login')}
-          />
-        )}
-      </View>
+      <ScrollView style={styles.rootScroll} contentContainerStyle={styles.rootScrollContent} showsVerticalScrollIndicator={false}>
+        <View style={[styles.screenViewport, { width: DESIGN_WIDTH * scale, height: DESIGN_HEIGHT * scale }]}>
+          <View style={[styles.screen, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+            {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen(currentAccount ? 'card' : 'login')} />}
+            {screen === 'received' && <ReceivedLinkScreen recipientName="OO" onCreatePuzzle={openPhotoPicker} onOpenPuzzle={() => setScreen('solve')} />}
+            {screen === 'receivedSplash' && <ReceivedSplashScreen onCheckPuzzle={() => setScreen('solve')} />}
+            {screen === 'login' && (
+              <AuthScreen
+                mode="login"
+                onBack={goBack}
+                onSwitchMode={() => setScreen('signup')}
+                onSubmit={handleAuthSubmit}
+              />
+            )}
+            {screen === 'signup' && (
+              <AuthScreen
+                mode="signup"
+                onBack={goBack}
+                onSwitchMode={() => setScreen('login')}
+                onSubmit={handleAuthSubmit}
+              />
+            )}
+            {screen === 'linkCreated' && currentAccount && (
+              <LinkCreatedScreen account={currentAccount} onBack={() => setScreen('card')} onDone={() => setScreen('card')} />
+            )}
+            {screen === 'card' && (
+              currentAccount ? (
+                <HomeScreen
+                  account={currentAccount}
+                  sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
+                  receivedPuzzleUri={storedPuzzleUri}
+                  onCreatePuzzle={openPhotoPicker}
+                  onOpenReceivedPuzzle={() => setScreen('solve')}
+                  onOpenPuzzleBox={() => setScreen('puzzleBox')}
+                  onOpenProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
+                />
+              ) : (
+                <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />
+              )
+            )}
+            {screen === 'puzzleBox' && (
+              <PuzzleBoxScreen
+                onBack={() => setScreen('card')}
+                onHome={() => setScreen('card')}
+                onProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
+                onCreatePuzzle={openPhotoPicker}
+                receivedPuzzleUri={storedPuzzleUri}
+                sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
+                solvedPreviewUri={completedPuzzleSourceUri ?? storedPuzzleSourceUri}
+              />
+            )}
+            {screen === 'profile' && currentAccount && (
+              <ProfileScreen
+                account={currentAccount}
+                onBack={() => setScreen('card')}
+                onHome={() => setScreen('card')}
+                onPuzzleBox={() => setScreen('puzzleBox')}
+              />
+            )}
+            {screen === 'photos' && (
+              <PhotoSelectScreen
+                photoUris={photoUris}
+                selectedPhotoIndex={selectedPhotoIndex}
+                onBack={goBack}
+                onPickPhoto={openPhotoPicker}
+                onSelectPhoto={setSelectedPhotoIndex}
+                onMakePuzzle={() => setScreen('puzzle')}
+              />
+            )}
+            {screen === 'puzzle' && selectedPhotoUri && (
+              <PuzzleDecorateScreen
+                photoUri={selectedPhotoUri}
+                screenScale={scale}
+                onBack={goBack}
+                onChangePhoto={() => setScreen('aiDecorate')}
+                onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
+                  setCompletedPuzzleUri(puzzleUri);
+                  setCompletedPuzzleSourceUri(puzzleSourceUri);
+                  setCompletedGridSize(nextGridSize);
+                  setCompletedStrokes(strokes);
+                  setCompletedTextStickers(textStickers);
+                  setScreen('complete');
+                }}
+              />
+            )}
+            {screen === 'aiDecorate' && selectedPhotoUri && (
+              <AiDecorateScreen
+                photoUri={selectedPhotoUri}
+                onBack={() => setScreen('puzzle')}
+                onSkip={() => setScreen('puzzle')}
+                onApply={() => setScreen('puzzle')}
+              />
+            )}
+            {screen === 'complete' && completedPuzzleUri && (
+              <PuzzleCompleteScreen
+                puzzleUri={completedPuzzleUri}
+                puzzleSourceUri={completedPuzzleSourceUri ?? completedPuzzleUri}
+                gridSize={completedGridSize}
+                strokes={completedStrokes}
+                textStickers={completedTextStickers}
+                onBack={goBack}
+              />
+            )}
+            {screen === 'solve' && (
+              <PuzzleSolveScreen
+                puzzleUri={activeSolvePuzzleUri}
+                puzzleSourceUri={activeSolvePuzzleSourceUri}
+                gridSize={activeSolveGridSize}
+                screenScale={scale}
+                screenOffsetX={screenOffsetX}
+                screenOffsetY={screenOffsetY}
+                onBack={goBack}
+                onComplete={(puzzleUri) => {
+                  setSolvedPuzzleUri(puzzleUri);
+                  setScreen('solveComplete');
+                }}
+              />
+            )}
+            {screen === 'solveComplete' && (
+              <SolvedPuzzleCompleteScreen
+                puzzleUri={solvedPuzzleUri ?? activeSolvePuzzleUri}
+                gridSize={activeSolveGridSize}
+                onBack={goBack}
+                onLogin={() => setScreen('login')}
+              />
+            )}
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -2359,7 +2363,13 @@ const designSystem = {
 } as const;
 
 function getResponsiveScale(width: number, height: number) {
-  return Math.min(width / designSystem.size.screenWidth, height / designSystem.size.screenHeight);
+  const widthScale = width / designSystem.size.screenWidth;
+  const heightScale = height / designSystem.size.screenHeight;
+
+  // 폰처럼 좁은 화면에서는 가로를 꽉 채우고 모자란 세로는 스크롤로 넘긴다.
+  // (높이에 맞추면 브라우저 주소창 높이만큼 화면 전체가 줄어들어 양옆에 여백이 생긴다)
+  // 넓은 화면에서는 기기 한 대가 통째로 보이도록 높이에 맞춘다.
+  return widthScale <= 1 ? widthScale : Math.min(widthScale, heightScale);
 }
 
 // 피그마 화면(402x874)은 맨 위에 폰이 직접 그리는 상태바 자리를 비워두고 있다.
@@ -2370,9 +2380,18 @@ const FRAME_HEIGHT = DESIGN_HEIGHT + STATUS_STRIP;
 const styles = StyleSheet.create({
   root: {
     flex: 1,
+    backgroundColor: designSystem.color.background,
+  },
+  rootScroll: {
+    flex: 1,
+    width: '100%',
+  },
+  rootScrollContent: {
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: designSystem.color.background,
+  },
+  screenViewport: {
     overflow: 'hidden',
   },
   screen: {
