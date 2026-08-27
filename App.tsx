@@ -1180,18 +1180,18 @@ function ProfileScreen({
       </View>
 
       <ProfileSectionHeader title="계정 정보" top={238} />
-      <ProfileRow label="이름" top={283} />
-      <ProfileRow label="이메일" top={334} />
-      <ProfileRow label="비밀번호" top={385} />
+      <ProfileRow label="이름" top={279} />
+      <ProfileRow label="이메일" top={329} />
+      <ProfileRow label="비밀번호" top={380} />
 
       <ProfileSectionHeader title="서비스 정보" top={428} />
-      <ProfileRow label="이용약관" top={475} />
-      <ProfileRow label="개인정보 처리 방침" top={526} />
-      <ProfileRow label="문의하기" top={576} />
+      <ProfileRow label="이용약관" top={471} />
+      <ProfileRow label="개인정보 처리 방침" top={520} />
+      <ProfileRow label="문의하기" top={572} />
 
       <ProfileSectionHeader title="계정 관리" top={622} />
-      <ProfileRow label="로그아웃" top={670} isAccent />
-      <ProfileRow label="회원 탈퇴" top={720} showChevron={false} />
+      <ProfileRow label="로그아웃" top={666} isAccent />
+      <ProfileRow label="회원 탈퇴" top={716} showChevron={false} />
 
       <HomeTabBar activeTab="profile" onHome={onHome} onPuzzleBox={onPuzzleBox} onProfile={() => undefined} />
     </View>
@@ -2725,7 +2725,7 @@ const styles = StyleSheet.create({
   sharedPublicTitle: {
     position: 'absolute',
     left: 21,
-    top: 381,
+    top: 393,
     color: '#141517',
     fontSize: 17,
     lineHeight: 24,
@@ -2876,7 +2876,7 @@ const styles = StyleSheet.create({
   sharedPublicModalCard: {
     position: 'absolute',
     left: 56,
-    top: 248,
+    top: 234,
     width: 332,
     height: 455,
     borderRadius: 10,
@@ -3237,10 +3237,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   homeReceivedHeader: {
-    top: 337,
+    top: 331,
   },
   homeSentHeader: {
-    top: 566,
+    top: 563,
   },
   homeSectionTitleWrap: {
     height: 24,
@@ -3248,7 +3248,7 @@ const styles = StyleSheet.create({
   },
   homeSectionHighlight: {
     position: 'absolute',
-    top: 13,
+    top: 19,
     width: 64,
     height: 4,
     backgroundColor: '#d3b4fb',
@@ -3273,7 +3273,7 @@ const styles = StyleSheet.create({
   homeSectionHeart: {
     position: 'absolute',
     left: 121,
-    top: 0,
+    top: 6,
     width: 18,
     height: 17,
     zIndex: 1,
@@ -3458,16 +3458,16 @@ const styles = StyleSheet.create({
   receivedNoticeOverlay: {
     position: 'absolute',
     left: 0,
+    right: 0,
     top: 0,
-    width: 390,
-    height: 844,
+    bottom: 0,
     backgroundColor: 'rgba(0,0,0,0.36)',
     zIndex: 20,
   },
   receivedNoticeCard: {
     position: 'absolute',
     left: 29,
-    top: 216,
+    top: 255,
     width: 332,
     height: 412,
     borderRadius: 10,
@@ -3586,7 +3586,7 @@ const styles = StyleSheet.create({
   profileBackButton: {
     position: 'absolute',
     left: 16,
-    top: 69,
+    top: 66,
     width: 24,
     height: 24,
     alignItems: 'center',
@@ -3653,7 +3653,7 @@ const styles = StyleSheet.create({
   profileCreatedAt: {
     position: 'absolute',
     left: 103,
-    top: 67,
+    top: 65,
     width: 241,
     color: '#666',
     fontFamily: designSystem.font.family,
@@ -3702,14 +3702,14 @@ const styles = StyleSheet.create({
   profileRowChevron: {
     position: 'absolute',
     left: 363,
-    top: 8,
+    top: 13,
     width: 16,
     height: 16,
   },
   profileRowDivider: {
     position: 'absolute',
     left: 24,
-    top: 50,
+    top: 46,
     width: 355,
     height: 1,
     backgroundColor: '#e6e7e9',
@@ -3735,7 +3735,7 @@ const styles = StyleSheet.create({
   puzzleBoxBackButton: {
     position: 'absolute',
     left: 16,
-    top: 69,
+    top: 66,
     width: 24,
     height: 24,
     alignItems: 'center',
@@ -3765,10 +3765,10 @@ const styles = StyleSheet.create({
   puzzleBoxTabBar: {
     position: 'absolute',
     left: -6,
-    top: 132,
-    width: 401,
+    top: 95,
+    width: 402,
     height: 60,
-    backgroundColor: '#fff',
+    backgroundColor: 'transparent',
     borderBottomWidth: 1,
     borderBottomColor: '#f1f1f1',
   },
@@ -3818,7 +3818,7 @@ const styles = StyleSheet.create({
   puzzleBoxUnsolvedTitle: {
     position: 'absolute',
     left: 25,
-    top: 196,
+    top: 183,
     color: '#141517',
     fontFamily: designSystem.font.family,
     fontSize: 17,
@@ -3829,7 +3829,7 @@ const styles = StyleSheet.create({
   puzzleBoxUnsolvedHighlight: {
     position: 'absolute',
     left: 60,
-    top: 218,
+    top: 199,
     width: 67,
     height: 4,
     backgroundColor: '#d3b4fb',
@@ -3838,7 +3838,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 219,
+    top: 209,
     height: 176,
   },
   puzzleBoxRowContent: {
@@ -3851,7 +3851,7 @@ const styles = StyleSheet.create({
   puzzleBoxSolvedTitle: {
     position: 'absolute',
     left: 25,
-    top: 394,
+    top: 408,
     color: '#141517',
     fontFamily: designSystem.font.family,
     fontSize: 17,
@@ -3941,7 +3941,7 @@ const styles = StyleSheet.create({
   puzzleBoxCreateButton: {
     position: 'absolute',
     left: 328,
-    top: 699,
+    top: 692,
     width: 54,
     height: 54,
     borderRadius: 27,
@@ -5019,7 +5019,7 @@ const styles = StyleSheet.create({
   },
   aiDecorateTitle: {
     position: 'absolute',
-    left: 36,
+    left: 31,
     top: 452,
     color: '#141517',
     fontFamily: designSystem.font.family,
@@ -5031,8 +5031,8 @@ const styles = StyleSheet.create({
   },
   aiDecorateHelper: {
     position: 'absolute',
-    left: 37,
-    top: 487,
+    left: 31,
+    top: 478,
     color: '#9f9f9f',
     fontFamily: designSystem.font.family,
     fontSize: 15,
@@ -5110,7 +5110,7 @@ const styles = StyleSheet.create({
   aiSkipButton: {
     position: 'absolute',
     left: 125,
-    top: 743,
+    top: 741,
     width: 140,
     height: 28,
     alignItems: 'center',
