@@ -4277,7 +4277,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: designSystem.size.topBarHeight,
+    top: 46,
     height: 60,
     borderBottomWidth: 1,
     borderBottomColor: '#f1f1f1',
@@ -4378,7 +4378,7 @@ const styles = StyleSheet.create({
   bottomPanel: {
     position: 'absolute',
     left: 0,
-    top: 701,
+    bottom: 0,
     width: 403,
     height: 173,
     borderTopLeftRadius: 20,
@@ -4569,7 +4569,7 @@ const styles = StyleSheet.create({
   solveBottomSheet: {
     position: 'absolute',
     left: -7,
-    top: 708,
+    bottom: 0,
     width: 403,
     height: 173,
     borderTopLeftRadius: 20,
