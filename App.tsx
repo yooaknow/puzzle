@@ -198,12 +198,6 @@ export default function App() {
     return null;
   }, []);
 
-  const startWithAiArtwork = useCallback(() => {
-    setPhotoUris([AI_PUZZLE_ARTWORK_URI]);
-    setSelectedPhotoIndex(0);
-    setScreen('puzzle');
-  }, []);
-
   useEffect(() => {
     loadWebFonts();
   }, []);
@@ -316,13 +310,13 @@ export default function App() {
               account={currentAccount}
               sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
               receivedPuzzleUri={storedPuzzleUri}
-              onCreatePuzzle={startWithAiArtwork}
+              onCreatePuzzle={openPhotoPicker}
               onOpenReceivedPuzzle={() => setScreen('solve')}
               onOpenPuzzleBox={() => setScreen('puzzleBox')}
               onOpenProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
             />
           ) : (
-            <CardCreateScreen onBack={goBack} onPickPhoto={startWithAiArtwork} />
+            <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />
           )
         )}
         {screen === 'puzzleBox' && (
@@ -330,7 +324,7 @@ export default function App() {
             onBack={() => setScreen('card')}
             onHome={() => setScreen('card')}
             onProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
-            onCreatePuzzle={startWithAiArtwork}
+            onCreatePuzzle={openPhotoPicker}
             receivedPuzzleUri={storedPuzzleUri}
             sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
             solvedPreviewUri={completedPuzzleSourceUri ?? storedPuzzleSourceUri}
