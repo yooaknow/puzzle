@@ -1827,7 +1827,7 @@ function PuzzleCompleteScreen({
     <View style={styles.fill}>
       <TopBar title="퍼즐 완성" onBack={onBack} withBorder />
 
-      <Image source={{ uri: celebrationAsset }} style={styles.celebrationImage} resizeMode="cover" />
+      <Image source={celebrationAsset} style={styles.celebrationImage} resizeMode="contain" />
       <Text style={styles.completeTitle}>
         <Text style={styles.completeTitleAccent}>퍼즐</Text>이 완성됐어요!
       </Text>
@@ -1861,7 +1861,7 @@ function PuzzleCompleteScreen({
       <View style={styles.loginNotice}>
         <Text style={styles.loginNoticeTitle}>보낸 퍼즐, 간직할까요?</Text>
         <Text style={styles.loginNoticeBody}>로그인하면 내가 보낸 퍼즐을 모아볼 수 있어요</Text>
-        <Image source={{ uri: loginPuzzleAsset }} style={styles.loginNoticeImage} resizeMode="cover" />
+        <Image source={loginPuzzleAsset} style={styles.loginNoticeImage} resizeMode="cover" />
       </View>
     </View>
   );
@@ -5126,8 +5126,8 @@ const styles = StyleSheet.create({
   },
   celebrationImage: {
     position: 'absolute',
-    left: 168,
-    top: 106,
+    left: 162,
+    top: 87,
     width: 67,
     height: 100,
   },
@@ -5135,7 +5135,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 36,
     right: 36,
-    top: 211,
+    top: 192,
     color: '#030303',
     fontSize: designSystem.font.hero,
     lineHeight: 40,
@@ -5150,7 +5150,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    top: 262,
+    top: 234,
     color: designSystem.color.muted,
     fontSize: 17,
     lineHeight: 24,
@@ -5161,7 +5161,7 @@ const styles = StyleSheet.create({
   completedPuzzleFrame: {
     position: 'absolute',
     left: 30,
-    top: 304,
+    top: 285,
     width: 330,
     height: 330,
     borderRadius: designSystem.radius.card,
@@ -5200,7 +5200,7 @@ const styles = StyleSheet.create({
   shareButton: {
     position: 'absolute',
     left: 29,
-    top: 656,
+    top: 637,
     width: designSystem.size.buttonWidth,
     height: designSystem.size.buttonHeight,
     borderRadius: designSystem.radius.button,
@@ -5211,7 +5211,7 @@ const styles = StyleSheet.create({
   loginNotice: {
     position: 'absolute',
     left: 30,
-    top: 724,
+    top: 705,
     width: 342,
     height: 74,
     borderRadius: 7,
