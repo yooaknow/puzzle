@@ -1,10 +1,3 @@
-export const SHARE_PUZZLE_KEY = 'puzzlw:sharedPuzzleUri';
-export const SHARE_PUZZLE_PREFIX = 'puzzlw:sharedPuzzleUri:';
-export const SHARE_PUZZLE_SOURCE_KEY = 'puzzlw:sharedPuzzleSourceUri';
-export const SHARE_PUZZLE_SOURCE_PREFIX = 'puzzlw:sharedPuzzleSourceUri:';
-export const SHARE_PUZZLE_GRID_SIZE_KEY = 'puzzlw:sharedPuzzleGridSize';
-export const SHARE_PUZZLE_GRID_SIZE_PREFIX = 'puzzlw:sharedPuzzleGridSize:';
-
 export const DESIGN_WIDTH = 390;
 export const DESIGN_HEIGHT = 825;
 export const TILE_WIDTH = 106;
@@ -64,6 +57,22 @@ export type WebNavigator = {
   };
 };
 
+export type WebTextArea = {
+  value: string;
+  style: { position: string; opacity: string };
+  setAttribute: (name: string, value: string) => void;
+  select: () => void;
+};
+
+export type WebCopyDocument = {
+  body: {
+    appendChild: (element: WebTextArea) => void;
+    removeChild: (element: WebTextArea) => void;
+  } | null;
+  createElement: (tagName: 'textarea') => WebTextArea;
+  execCommand: (command: 'copy') => boolean;
+};
+
 export type WebStorage = {
   getItem: (key: string) => string | null;
   setItem: (key: string, value: string) => void;
@@ -92,6 +101,7 @@ export type WebCanvasContext = {
   clearRect: (x: number, y: number, width: number, height: number) => void;
   fillRect: (x: number, y: number, width: number, height: number) => void;
   fillText: (text: string, x: number, y: number) => void;
+  measureText: (text: string) => { width: number };
   lineWidth: number;
   strokeStyle: string;
   fillStyle: string;
@@ -100,13 +110,17 @@ export type WebCanvasContext = {
   font: string;
   textAlign: string;
   textBaseline: string;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
 };
 
 export type WebCanvas = {
   width: number;
   height: number;
   getContext: (contextId: '2d') => WebCanvasContext | null;
-  toDataURL: (type?: string) => string;
+  toDataURL: (type?: string, quality?: number) => string;
 };
 
 export type WebImageElement = {

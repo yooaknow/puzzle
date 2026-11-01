@@ -1,7 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Alert,
   GestureResponderEvent,
   Image,
   ImageSourcePropType,
@@ -10,7 +9,6 @@ import {
   Pressable,
   SafeAreaView,
   ScrollView,
-  Share,
   StyleProp,
   StyleSheet,
   Text,
@@ -23,7 +21,6 @@ import {
 import {
   aiPromptPreviewAsset,
   aiPromptSparkleAsset,
-  aiPuzzleArtworkAsset,
   cardStartPhotoPlaceholderIconAsset,
   cardStartPuzzleFrameAsset,
   cardStartPuzzleSheetAsset,
@@ -41,11 +38,6 @@ import {
   mainModalCloseIconAsset,
   mainReceivedNotificationPuzzleAsset,
   mainReceivedPurplePuzzleAsset,
-  mainSentBeachFoodCardAsset,
-  mainSentBeachFriendsCardAsset,
-  mainSentDogCardAsset,
-  mainSentFlowerCardBaseAsset,
-  mainSentFlowerCardOverlayAsset,
   mainShareArrowIconAsset,
   mainTabBookHalfIconAsset,
   mainTabBookOutlineIconAsset,
@@ -54,37 +46,46 @@ import {
   mainTabPersonFilledIconAsset,
   mainTabPuzzleFilledIconAsset,
   mainYellowGiftPuzzleAsset,
+  practicePuzzlePhotoUri,
   profileChevronRightIconAsset,
   profilePuzzleAvatarAsset,
   loginPuzzleAsset,
   puzzleSizeBadgeIconAsset,
   redoIconAsset,
   solveCounterPuzzleIconAsset,
-  sharedPublicBeachFriendsCardAsset,
-  sharedPublicCatCardAsset,
-  sharedPublicDogCardAsset,
-  sharedPublicFlowerBaseAsset,
-  sharedPublicFlowerOverlayAsset,
-  sharedPublicFoodCardAsset,
   sharedPublicLockFillIconAsset,
   sharedPublicModalCloseIconAsset,
-  sharedPublicModalPuzzleAsset,
-  sharedPublicSunsetCardAsset,
   linkCreatedPuzzleAsset,
-  solveCompleteCelebrationAsset,
-  solveCompletePuzzleAsset,
-  solveSamplePieces,
-  solveSamplePuzzle,
   splashBlackArmAsset,
   splashChevronRightIconAsset,
-  splashPuzzleSheet,
   splashPuzzleSheetAsset,
   splashYellowPuzzleAsset,
   trashIconAsset,
   undoIconAsset,
-  authPuzzleIconAsset,
 } from './src/assets';
+import {
+  AuthAccount,
+  AuthCredentials,
+  authenticateAccount,
+  clearAuthSession,
+  deleteAuthAccount,
+  findAccountBySlug,
+  getDisplayNameFromSlug,
+  getStoredAuthSession,
+} from './src/authStore';
 import { BODY_FONT_FAMILY, DISPLAY_FONT_FAMILY, loadWebFonts } from './src/fonts';
+import {
+  claimSentPuzzle,
+  deletePuzzleDataFor,
+  getPuzzle,
+  listReceivedPuzzles,
+  listSentPuzzles,
+  markPuzzleSolved,
+  PuzzleRecord,
+  ReceivedPuzzle,
+  receivePuzzle,
+  savePuzzle,
+} from './src/puzzleStore';
 import {
   DESIGN_HEIGHT,
   DESIGN_WIDTH,
@@ -98,9 +99,9 @@ import {
   TextSticker,
   TILE_HEIGHT,
   TILE_WIDTH,
+  WebCopyDocument,
   WebDocument,
   WebNavigator,
-  WebStorage,
   WebUrl,
 } from './src/types';
 import {
@@ -109,16 +110,12 @@ import {
   createPuzzleArtworkImage,
   createPuzzleImage,
   createPuzzlePieces,
-  createSharedPuzzleId,
   getShareUrl,
+  getSharedProfileSlug,
   getSharedPuzzleId,
   getPuzzlePieceMargin,
-  getStoredPuzzleGridSize,
-  getStoredPuzzleSourceUri,
-  getStoredPuzzleUri,
   getProfileShareUrl,
   isSharedLink,
-  saveStoredPuzzleUri,
   sliderOffsetFromWidth,
   widthFromSlider,
 } from './src/puzzleUtils';
@@ -126,56 +123,78 @@ import {
 const EMPTY_PHOTO_URIS: string[] = [];
 const DRAW_COLORS = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#914fec', '#ed72bd', '#ecc192', '#feffff', '#000', '#fff'];
 const TEXT_COLORS = ['#f14444', '#f7821b', '#ffcb05', '#b0db4a', '#37b83f', '#297af4', '#fff', '#000'];
-const AUTH_ACCOUNTS_KEY = 'puzzlw:authAccounts';
-const AUTH_SESSION_KEY = 'puzzlw:authSession';
 const AI_PUZZLE_ARTWORK_URI = '/images/ai-puzzle-artwork-sunset.png';
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+const PUBLIC_PUZZLE_COLORS = ['#f7d8df', '#dccbff', '#cde8ff', '#ffe6a8', '#e9eef2', '#f5d6bf'];
 
-type AuthAccount = {
-  name: string;
-  email: string;
-  password: string;
-  slug: string;
+type SolveTarget = {
+  // null이면 연습용 퍼즐이라 풀어도 퍼즐함에 저장하지 않는다.
+  puzzleId: string | null;
+  sourceUri: string;
+  gridSize: GridSize;
 };
 
-type AuthCredentials = {
-  mode: 'login' | 'signup';
-  name: string;
-  email: string;
-  password: string;
-  passwordConfirm: string;
+type PendingAuthAction = { type: 'claimSent' | 'saveSolved'; puzzleId: string };
+
+const PRACTICE_SOLVE_TARGET: SolveTarget = { puzzleId: null, sourceUri: practicePuzzlePhotoUri, gridSize: 3 };
+
+// 다른 화면에서 들어온 기록이 없을 때 뒤로 가기가 향하는 화면.
+const DEFAULT_BACK_SCREEN: Partial<Record<ScreenName, ScreenName>> = {
+  photos: 'card',
+  puzzle: 'photos',
+  aiDecorate: 'puzzle',
+  complete: 'puzzle',
+  solve: 'receivedSplash',
+  solveComplete: 'solve',
+  linkCreated: 'card',
+  puzzleBox: 'card',
+  profile: 'card',
 };
 
 export default function App() {
+  const sharedPuzzleId = useMemo(() => getSharedPuzzleId(), []);
+  const sharedProfileSlug = useMemo(() => getSharedProfileSlug(), []);
   const [screen, setScreen] = useState<ScreenName>(() => {
-    if (getSharedPuzzleId()) {
+    if (sharedPuzzleId) {
       return 'receivedSplash';
     }
     return isSharedLink() ? 'received' : 'splash';
   });
+  const [backScreens, setBackScreens] = useState<Partial<Record<ScreenName, ScreenName>>>({});
   const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
-  const [completedPuzzleUri, setCompletedPuzzleUri] = useState<string | null>(null);
-  const [completedPuzzleSourceUri, setCompletedPuzzleSourceUri] = useState<string | null>(null);
-  const [completedGridSize, setCompletedGridSize] = useState<GridSize>(3);
-  const [solvedPuzzleUri, setSolvedPuzzleUri] = useState<string | null>(null);
-  const [completedStrokes, setCompletedStrokes] = useState<DrawStroke[]>([]);
-  const [completedTextStickers, setCompletedTextStickers] = useState<TextSticker[]>([]);
+  // 지금 꾸미는 사진으로 이미 만든 퍼즐. 꾸미기로 돌아가 다시 완성하면 새로 만들지 않고 덮어쓴다.
+  const [draftPuzzleId, setDraftPuzzleId] = useState<string | null>(null);
+  // 프로필 링크로 들어와 만드는 퍼즐이면 그 링크 주인에게 보낸다.
+  const [draftRecipientSlug, setDraftRecipientSlug] = useState<string | null>(null);
+  const [completedPuzzle, setCompletedPuzzle] = useState<PuzzleRecord | null>(null);
+  const [solveTarget, setSolveTarget] = useState<SolveTarget>(PRACTICE_SOLVE_TARGET);
   const [currentAccount, setCurrentAccount] = useState<AuthAccount | null>(() => getStoredAuthSession());
+  const [pendingAuthAction, setPendingAuthAction] = useState<PendingAuthAction | null>(null);
+  const [puzzleBoxTab, setPuzzleBoxTab] = useState<'received' | 'sent'>('received');
+  const [dismissedNoticePuzzleId, setDismissedNoticePuzzleId] = useState<string | null>(null);
+  const [libraryVersion, setLibraryVersion] = useState(0);
   const selectedPhotoUri = selectedPhotoIndex === null ? null : photoUris[selectedPhotoIndex];
   const { width, height } = useWindowDimensions();
-  const sharedPuzzleId = useMemo(() => getSharedPuzzleId(), []);
-  const storedPuzzleUri = useMemo(() => getStoredPuzzleUri(sharedPuzzleId), [sharedPuzzleId]);
-  const storedPuzzleSourceUri = useMemo(() => getStoredPuzzleSourceUri(sharedPuzzleId), [sharedPuzzleId]);
-  const storedPuzzleGridSize = useMemo(() => getStoredPuzzleGridSize(sharedPuzzleId), [sharedPuzzleId]);
-  const activeSolvePuzzleUri = completedPuzzleUri ?? storedPuzzleUri ?? solveSamplePuzzle;
-  // 퍼즐 조각은 반드시 선이 그려지지 않은 원본에서 잘라낸다.
-  // (선이 그려진 puzzleUri로 넘어가면 조각마다 칸 나누는 선이 박혀버린다)
-  const activeSolvePuzzleSourceUri = completedPuzzleSourceUri ?? storedPuzzleSourceUri ?? solveSamplePuzzle;
-  const activeSolveGridSize = completedPuzzleUri ? completedGridSize : storedPuzzleGridSize;
   const [viewportSize, setViewportSize] = useState({ width, height });
   const scale = getResponsiveScale(viewportSize.width, viewportSize.height);
   const screenOffsetX = Math.max(0, (viewportSize.width - DESIGN_WIDTH * scale) / 2);
   const screenOffsetY = Math.max(0, (viewportSize.height - DESIGN_HEIGHT * scale) / 2);
+
+  // 저장소가 바뀔 때마다 libraryVersion을 올려서 목록을 다시 읽는다.
+  const receivedPuzzles = useMemo(
+    () => (currentAccount ? listReceivedPuzzles(currentAccount) : []),
+    [currentAccount, libraryVersion],
+  );
+  const sentPuzzles = useMemo(() => (currentAccount ? listSentPuzzles(currentAccount.email) : []), [currentAccount, libraryVersion]);
+  const noticePuzzle = receivedPuzzles.find((puzzle) => puzzle.solvedAt === null && puzzle.id !== dismissedNoticePuzzleId) ?? null;
+  const sharedProfileAccount = useMemo(() => (sharedProfileSlug ? findAccountBySlug(sharedProfileSlug) : null), [sharedProfileSlug, libraryVersion]);
+  const sharedProfileName = sharedProfileAccount?.name ?? (sharedProfileSlug ? getDisplayNameFromSlug(sharedProfileSlug) : '친구');
+  const sharedProfilePuzzles = useMemo(
+    () => (sharedProfileAccount ? listReceivedPuzzles(sharedProfileAccount).filter((puzzle) => puzzle.solvedAt !== null) : []),
+    [sharedProfileAccount, libraryVersion],
+  );
+  const refreshLibrary = () => setLibraryVersion((current) => current + 1);
 
   const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
     const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
@@ -187,20 +206,17 @@ export default function App() {
     });
   }, []);
 
-  const handleAuthSubmit = useCallback((credentials: AuthCredentials) => {
-    const result = authenticateAccount(credentials);
-    if (!result.account) {
-      return result.error;
-    }
-
-    setCurrentAccount(result.account);
-    setScreen('linkCreated');
-    return null;
-  }, []);
-
   useEffect(() => {
     loadWebFonts();
   }, []);
+
+  // 로그인한 채로 공유 링크를 열면 그 퍼즐을 받은 퍼즐에 담아둔다.
+  useEffect(() => {
+    if (currentAccount && sharedPuzzleId) {
+      receivePuzzle(currentAccount.email, sharedPuzzleId);
+      refreshLibrary();
+    }
+  }, [currentAccount, sharedPuzzleId]);
 
   useEffect(() => {
     return () => {
@@ -211,7 +227,72 @@ export default function App() {
     };
   }, [photoUris]);
 
-  const openPhotoPicker = () => {
+  // 뒤로 가기가 지금 화면으로 돌아오도록 기록하고 이동한다.
+  const navigate = (nextScreen: ScreenName, backScreen: ScreenName = screen) => {
+    setBackScreens((current) => ({ ...current, [nextScreen]: backScreen }));
+    setScreen(nextScreen);
+  };
+
+  const goBack = () => {
+    setScreen(backScreens[screen] ?? DEFAULT_BACK_SCREEN[screen] ?? 'splash');
+  };
+
+  const openLogin = (pendingAction: PendingAuthAction | null) => {
+    setPendingAuthAction(pendingAction);
+    navigate('login');
+  };
+
+  const handleAuthSubmit = (credentials: AuthCredentials) => {
+    const result = authenticateAccount(credentials);
+    if (!result.account) {
+      return result.error;
+    }
+
+    const account = result.account;
+    let nextScreen: ScreenName = credentials.mode === 'signup' ? 'linkCreated' : 'card';
+    if (sharedPuzzleId) {
+      receivePuzzle(account.email, sharedPuzzleId);
+    }
+    if (pendingAuthAction) {
+      if (pendingAuthAction.type === 'claimSent') {
+        claimSentPuzzle(pendingAuthAction.puzzleId, account);
+        setPuzzleBoxTab('sent');
+      } else {
+        markPuzzleSolved(account.email, pendingAuthAction.puzzleId);
+        setPuzzleBoxTab('received');
+      }
+      if (credentials.mode === 'login') {
+        nextScreen = 'puzzleBox';
+      }
+      setPendingAuthAction(null);
+    }
+
+    setCurrentAccount(account);
+    refreshLibrary();
+    setScreen(nextScreen);
+    return null;
+  };
+
+  const handleLogout = () => {
+    clearAuthSession();
+    setCurrentAccount(null);
+    setScreen('splash');
+    showToast('로그아웃했어요.');
+  };
+
+  const handleDeleteAccount = () => {
+    if (!currentAccount) {
+      return;
+    }
+    deletePuzzleDataFor(currentAccount.email);
+    deleteAuthAccount(currentAccount.email);
+    setCurrentAccount(null);
+    refreshLibrary();
+    setScreen('splash');
+    showToast('탈퇴가 완료됐어요.');
+  };
+
+  const openPhotoPicker = (recipientSlug: string | null) => {
     const webDocument = (globalThis as unknown as { document?: WebDocument }).document;
     const webUrl = (globalThis as unknown as { URL?: WebUrl }).URL;
 
@@ -233,49 +314,39 @@ export default function App() {
       const nextUris = files.map((file) => webUrl.createObjectURL(file));
       setPhotoUris(nextUris);
       setSelectedPhotoIndex(null);
-      setScreen('photos');
+      setDraftPuzzleId(null);
+      setDraftRecipientSlug(recipientSlug);
+      if (screen !== 'photos') {
+        navigate('photos');
+      }
     };
     input.click();
   };
 
-  const goBack = () => {
-    if (screen === 'photos') {
-      setScreen('card');
-      return;
+  const createPuzzle = () => openPhotoPicker(null);
+
+  const openSolve = (puzzle: PuzzleRecord | null) => {
+    setSolveTarget(puzzle ? { puzzleId: puzzle.id, sourceUri: puzzle.sourceUri, gridSize: puzzle.gridSize } : PRACTICE_SOLVE_TARGET);
+    navigate('solve');
+  };
+
+  const openSharedPuzzle = () => {
+    const puzzle = sharedPuzzleId ? getPuzzle(sharedPuzzleId) : null;
+    if (!puzzle) {
+      // 퍼즐은 만든 브라우저에만 저장된다. 다른 기기에서 링크를 열면 찾을 수 없다.
+      showToast('이 브라우저에서는 퍼즐을 찾을 수 없어 연습용 퍼즐을 열었어요.');
     }
-    if (screen === 'puzzle') {
-      setScreen('photos');
-      return;
-    }
-    if (screen === 'aiDecorate') {
-      setScreen('puzzle');
-      return;
-    }
-    if (screen === 'complete') {
-      setScreen('puzzle');
-      return;
-    }
-    if (screen === 'solve') {
-      setScreen(sharedPuzzleId ? 'receivedSplash' : 'received');
-      return;
-    }
-    if (screen === 'solveComplete') {
-      setScreen('solve');
-      return;
-    }
-    if (screen === 'received' || screen === 'receivedSplash') {
-      setScreen('splash');
-      return;
-    }
-    if (screen === 'linkCreated' || screen === 'puzzleBox' || screen === 'profile') {
-      setScreen('card');
-      return;
-    }
-    if (screen === 'login' || screen === 'signup') {
-      setScreen('splash');
-      return;
-    }
-    setScreen('splash');
+    openSolve(puzzle);
+  };
+
+  const openSentPuzzle = (puzzle: PuzzleRecord) => {
+    setCompletedPuzzle(puzzle);
+    navigate('complete');
+  };
+
+  const openPuzzleBox = (tab: 'received' | 'sent' = 'received') => {
+    setPuzzleBoxTab(tab);
+    setScreen('puzzleBox');
   };
 
   return (
@@ -284,14 +355,26 @@ export default function App() {
       <ScrollView style={styles.rootScroll} contentContainerStyle={styles.rootScrollContent} showsVerticalScrollIndicator={false}>
         <View style={[styles.screenViewport, { width: DESIGN_WIDTH * scale, height: DESIGN_HEIGHT * scale }]}>
           <View style={[styles.screen, { transform: [{ scale }], transformOrigin: 'top left' }]}>
-            {screen === 'splash' && <SplashScreen onStart={() => setScreen('card')} onLogin={() => setScreen(currentAccount ? 'card' : 'login')} />}
-            {screen === 'received' && <ReceivedLinkScreen recipientName="OO" onCreatePuzzle={openPhotoPicker} onOpenPuzzle={() => setScreen('solve')} />}
-            {screen === 'receivedSplash' && <ReceivedSplashScreen onCheckPuzzle={() => setScreen('solve')} />}
+            {screen === 'splash' && (
+              <SplashScreen
+                onStart={() => setScreen('card')}
+                onLogin={() => (currentAccount ? setScreen('card') : openLogin(null))}
+              />
+            )}
+            {screen === 'received' && (
+              <ReceivedLinkScreen
+                recipientName={sharedProfileName}
+                publicPuzzles={sharedProfilePuzzles}
+                onCreatePuzzle={() => openPhotoPicker(sharedProfileSlug)}
+                onOpenPuzzle={openSolve}
+              />
+            )}
+            {screen === 'receivedSplash' && <ReceivedSplashScreen onCheckPuzzle={openSharedPuzzle} />}
             {screen === 'login' && (
               <AuthScreen
                 mode="login"
                 onBack={goBack}
-                onSwitchMode={() => setScreen('signup')}
+                onSwitchMode={() => navigate('signup', backScreens.login ?? 'splash')}
                 onSubmit={handleAuthSubmit}
               />
             )}
@@ -299,7 +382,7 @@ export default function App() {
               <AuthScreen
                 mode="signup"
                 onBack={goBack}
-                onSwitchMode={() => setScreen('login')}
+                onSwitchMode={() => navigate('login', backScreens.signup ?? 'splash')}
                 onSubmit={handleAuthSubmit}
               />
             )}
@@ -310,26 +393,33 @@ export default function App() {
               currentAccount ? (
                 <HomeScreen
                   account={currentAccount}
-                  sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
-                  receivedPuzzleUri={storedPuzzleUri}
-                  onCreatePuzzle={openPhotoPicker}
-                  onOpenReceivedPuzzle={() => setScreen('solve')}
-                  onOpenPuzzleBox={() => setScreen('puzzleBox')}
-                  onOpenProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
+                  receivedPuzzles={receivedPuzzles}
+                  sentPuzzles={sentPuzzles}
+                  noticePuzzle={noticePuzzle}
+                  onDismissNotice={(puzzle) => setDismissedNoticePuzzleId(puzzle.id)}
+                  onCreatePuzzle={createPuzzle}
+                  onOpenPractice={() => openSolve(null)}
+                  onOpenReceivedPuzzle={openSolve}
+                  onOpenSentPuzzle={openSentPuzzle}
+                  onOpenPuzzleBox={() => openPuzzleBox()}
+                  onOpenProfile={() => setScreen('profile')}
                 />
               ) : (
-                <CardCreateScreen onBack={goBack} onPickPhoto={openPhotoPicker} />
+                <CardCreateScreen onBack={goBack} onPickPhoto={createPuzzle} />
               )
             )}
             {screen === 'puzzleBox' && (
               <PuzzleBoxScreen
+                initialTab={puzzleBoxTab}
+                receivedPuzzles={receivedPuzzles}
+                sentPuzzles={sentPuzzles}
                 onBack={() => setScreen('card')}
                 onHome={() => setScreen('card')}
-                onProfile={() => setScreen(currentAccount ? 'profile' : 'login')}
-                onCreatePuzzle={openPhotoPicker}
-                receivedPuzzleUri={storedPuzzleUri}
-                sentPuzzleUri={completedPuzzleUri ?? storedPuzzleUri}
-                solvedPreviewUri={completedPuzzleSourceUri ?? storedPuzzleSourceUri}
+                onProfile={() => (currentAccount ? setScreen('profile') : openLogin(null))}
+                onCreatePuzzle={createPuzzle}
+                onOpenPractice={() => openSolve(null)}
+                onOpenReceivedPuzzle={openSolve}
+                onOpenSentPuzzle={openSentPuzzle}
               />
             )}
             {screen === 'profile' && currentAccount && (
@@ -337,7 +427,9 @@ export default function App() {
                 account={currentAccount}
                 onBack={() => setScreen('card')}
                 onHome={() => setScreen('card')}
-                onPuzzleBox={() => setScreen('puzzleBox')}
+                onPuzzleBox={() => openPuzzleBox()}
+                onLogout={handleLogout}
+                onDeleteAccount={handleDeleteAccount}
               />
             )}
             {screen === 'photos' && (
@@ -345,8 +437,11 @@ export default function App() {
                 photoUris={photoUris}
                 selectedPhotoIndex={selectedPhotoIndex}
                 onBack={goBack}
-                onPickPhoto={openPhotoPicker}
-                onSelectPhoto={setSelectedPhotoIndex}
+                onPickPhoto={() => openPhotoPicker(draftRecipientSlug)}
+                onSelectPhoto={(index) => {
+                  setSelectedPhotoIndex(index);
+                  setDraftPuzzleId(null);
+                }}
                 onMakePuzzle={() => setScreen('puzzle')}
               />
             )}
@@ -356,13 +451,22 @@ export default function App() {
                 screenScale={scale}
                 onBack={goBack}
                 onChangePhoto={() => setScreen('aiDecorate')}
-                onComplete={(puzzleUri, puzzleSourceUri, nextGridSize, strokes, textStickers) => {
-                  setCompletedPuzzleUri(puzzleUri);
-                  setCompletedPuzzleSourceUri(puzzleSourceUri);
-                  setCompletedGridSize(nextGridSize);
-                  setCompletedStrokes(strokes);
-                  setCompletedTextStickers(textStickers);
-                  setScreen('complete');
+                onComplete={(sourceUri, gridSize) => {
+                  const puzzle = savePuzzle({
+                    id: draftPuzzleId,
+                    sourceUri,
+                    gridSize,
+                    sender: currentAccount,
+                    recipientSlug: draftRecipientSlug,
+                  });
+                  if (!puzzle) {
+                    showToast('저장 공간이 부족해 퍼즐을 저장하지 못했어요.');
+                    return;
+                  }
+                  setDraftPuzzleId(puzzle.id);
+                  setCompletedPuzzle(puzzle);
+                  refreshLibrary();
+                  navigate('complete');
                 }}
               />
             )}
@@ -371,47 +475,165 @@ export default function App() {
                 photoUri={selectedPhotoUri}
                 onBack={() => setScreen('puzzle')}
                 onSkip={() => setScreen('puzzle')}
-                onApply={() => setScreen('puzzle')}
+                onApply={() => showToast('AI로 꾸미기는 준비 중이에요.')}
               />
             )}
-            {screen === 'complete' && completedPuzzleUri && (
+            {screen === 'complete' && completedPuzzle && (
               <PuzzleCompleteScreen
-                puzzleUri={completedPuzzleUri}
-                puzzleSourceUri={completedPuzzleSourceUri ?? completedPuzzleUri}
-                gridSize={completedGridSize}
-                strokes={completedStrokes}
-                textStickers={completedTextStickers}
+                puzzle={completedPuzzle}
+                isLoggedIn={currentAccount !== null}
                 onBack={goBack}
+                onKeepPuzzle={() =>
+                  currentAccount ? openPuzzleBox('sent') : openLogin({ type: 'claimSent', puzzleId: completedPuzzle.id })
+                }
               />
             )}
             {screen === 'solve' && (
               <PuzzleSolveScreen
-                puzzleUri={activeSolvePuzzleUri}
-                puzzleSourceUri={activeSolvePuzzleSourceUri}
-                gridSize={activeSolveGridSize}
+                puzzleSourceUri={solveTarget.sourceUri}
+                gridSize={solveTarget.gridSize}
                 screenScale={scale}
                 screenOffsetX={screenOffsetX}
                 screenOffsetY={screenOffsetY}
                 onBack={goBack}
-                onComplete={(puzzleUri) => {
-                  setSolvedPuzzleUri(puzzleUri);
+                onComplete={() => {
+                  if (currentAccount && solveTarget.puzzleId) {
+                    markPuzzleSolved(currentAccount.email, solveTarget.puzzleId);
+                    refreshLibrary();
+                  }
                   setScreen('solveComplete');
                 }}
               />
             )}
             {screen === 'solveComplete' && (
               <SolvedPuzzleCompleteScreen
-                puzzleUri={solvedPuzzleUri ?? activeSolvePuzzleUri}
-                gridSize={activeSolveGridSize}
+                puzzleUri={solveTarget.sourceUri}
+                gridSize={solveTarget.gridSize}
+                isPractice={solveTarget.puzzleId === null}
+                isLoggedIn={currentAccount !== null}
                 onBack={goBack}
-                onLogin={() => setScreen('login')}
+                onSave={() => {
+                  if (!currentAccount) {
+                    openLogin(solveTarget.puzzleId ? { type: 'saveSolved', puzzleId: solveTarget.puzzleId } : null);
+                    return;
+                  }
+                  if (solveTarget.puzzleId) {
+                    openPuzzleBox('received');
+                    return;
+                  }
+                  setScreen('card');
+                }}
+                onCreatePuzzle={createPuzzle}
               />
             )}
           </View>
         </View>
       </ScrollView>
+      <Toast />
     </SafeAreaView>
   );
+}
+
+// 웹에서는 Alert.alert가 아무것도 띄우지 않아서, 짧은 안내는 화면 아래 토스트로 보여준다.
+let toastListener: ((message: string) => void) | null = null;
+
+function showToast(message: string) {
+  toastListener?.(message);
+}
+
+function Toast() {
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let hideTimer: ReturnType<typeof setTimeout> | undefined;
+    toastListener = (nextMessage) => {
+      setMessage(nextMessage);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setMessage(null), 2400);
+    };
+    return () => {
+      toastListener = null;
+      clearTimeout(hideTimer);
+    };
+  }, []);
+
+  if (!message) {
+    return null;
+  }
+
+  return (
+    <View pointerEvents="none" style={styles.toastWrap}>
+      <View style={styles.toast}>
+        <Text style={styles.toastText}>{message}</Text>
+      </View>
+    </View>
+  );
+}
+
+async function shareLink({ title, text, url }: { title: string; text: string; url: string }) {
+  const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
+
+  if (webNavigator?.share) {
+    try {
+      await webNavigator.share({ title, text, url });
+      return true;
+    } catch (error) {
+      // 공유 창을 그냥 닫은 경우엔 조용히 끝낸다.
+      if ((error as { name?: string } | null)?.name === 'AbortError') {
+        return false;
+      }
+    }
+  }
+
+  if (await copyText(url)) {
+    showToast('링크를 복사했어요. 친구에게 붙여넣어 보내주세요.');
+    return true;
+  }
+  showToast('이 브라우저에서는 링크를 공유할 수 없어요.');
+  return false;
+}
+
+async function copyText(text: string) {
+  const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
+  try {
+    if (webNavigator?.clipboard) {
+      await webNavigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // 앱 안 브라우저처럼 클립보드 권한이 막힌 곳이 있어서 아래 방법으로 한 번 더 시도한다.
+  }
+
+  const webDocument = (globalThis as unknown as { document?: WebCopyDocument }).document;
+  if (!webDocument?.body) {
+    return false;
+  }
+  const textArea = webDocument.createElement('textarea');
+  textArea.value = text;
+  textArea.setAttribute('readonly', '');
+  textArea.style.position = 'fixed';
+  textArea.style.opacity = '0';
+  webDocument.body.appendChild(textArea);
+  textArea.select();
+  try {
+    return webDocument.execCommand('copy');
+  } catch {
+    return false;
+  } finally {
+    webDocument.body.removeChild(textArea);
+  }
+}
+
+function formatMonthDay(timestamp: number) {
+  const date = new Date(timestamp);
+  return `${date.getMonth() + 1}월 ${date.getDate()}일`;
+}
+
+function formatFullDate(timestamp: number) {
+  const date = new Date(timestamp);
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${date.getFullYear()}.${month}.${day}`;
 }
 
 function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () => void }) {
@@ -470,34 +692,22 @@ function ReceivedSplashScreen({ onCheckPuzzle }: { onCheckPuzzle: () => void }) 
 type SharedPublicPuzzleCardProps = {
   backgroundColor: string;
   date: string;
+  imageUri: string;
   onPress: () => void;
   locked?: boolean;
-  showLink?: boolean;
-  layers: Array<{
-    source: ImageSourcePropType;
-    style: ImageStyle;
-  }>;
 };
 
-function SharedPublicPuzzleCard({ backgroundColor, date, onPress, locked = false, showLink = true, layers }: SharedPublicPuzzleCardProps) {
+function SharedPublicPuzzleCard({ backgroundColor, date, imageUri, onPress, locked = false }: SharedPublicPuzzleCardProps) {
   return (
     <Pressable disabled={locked} onPress={onPress} style={({ pressed }) => [styles.sharedPublicPuzzleCard, pressed && styles.pressed]}>
       <View style={[styles.sharedPublicPuzzlePreview, { backgroundColor }]}>
-        {layers.map((layer, index) => (
-          <Image
-            key={`${date}-${index}`}
-            source={layer.source}
-            style={[styles.sharedPublicPuzzleImage, layer.style]}
-            resizeMode="cover"
-            blurRadius={locked ? 7 : 0}
-          />
-        ))}
+        <Image source={{ uri: imageUri }} style={[styles.sharedPublicPuzzleImage, styles.sharedPublicPuzzlePhoto]} resizeMode="cover" blurRadius={locked ? 7 : 0} />
         {locked && <View style={styles.sharedPublicLockedScrim} />}
         {locked && <Image source={sharedPublicLockFillIconAsset} style={styles.sharedPublicLockIcon} resizeMode="contain" />}
       </View>
       <View style={styles.sharedPublicPuzzleMeta}>
         <Text style={styles.sharedPublicPuzzleDate}>{date}</Text>
-        {showLink && (
+        {!locked && (
           <View style={styles.sharedPublicPuzzleLink}>
             <Text style={styles.sharedPublicPuzzleLinkText}>퍼즐 보기</Text>
             <Image source={mainShareArrowIconAsset} style={styles.sharedPublicPuzzleArrow} resizeMode="contain" />
@@ -510,61 +720,31 @@ function SharedPublicPuzzleCard({ backgroundColor, date, onPress, locked = false
 
 function ReceivedLinkScreen({
   recipientName,
+  publicPuzzles,
   onCreatePuzzle,
   onOpenPuzzle,
 }: {
   recipientName: string;
+  publicPuzzles: ReceivedPuzzle[];
   onCreatePuzzle: () => void;
-  onOpenPuzzle: () => void;
+  onOpenPuzzle: (puzzle: ReceivedPuzzle) => void;
 }) {
-  const [selectedPublicPuzzleDate, setSelectedPublicPuzzleDate] = useState<string | null>(null);
+  const [selectedPublicPuzzle, setSelectedPublicPuzzle] = useState<ReceivedPuzzle | null>(null);
   const isPrivatePublicPuzzles = useMemo(() => {
     const webLocation = (globalThis as unknown as { location?: { search?: string } }).location;
     return webLocation?.search?.includes('private=1') ?? false;
   }, []);
-  const publicPuzzleRows = [
-    [
-      {
-        backgroundColor: '#f7d8df',
-        date: '8월 18일',
-        showLink: !isPrivatePublicPuzzles,
-        layers: [
-          { source: sharedPublicFlowerBaseAsset, style: styles.sharedPublicFlowerBase },
-          { source: sharedPublicFlowerOverlayAsset, style: styles.sharedPublicFlowerOverlay },
-        ],
-      },
-      {
-        backgroundColor: '#dccbff',
-        date: '8월 12일',
-        layers: [{ source: sharedPublicBeachFriendsCardAsset, style: styles.sharedPublicBeachFriends }],
-      },
-    ],
-    [
-      {
-        backgroundColor: '#cde8ff',
-        date: '8월 3일',
-        layers: [{ source: sharedPublicDogCardAsset, style: styles.sharedPublicDog }],
-      },
-      {
-        backgroundColor: '#ffe6a8',
-        date: '7월 28일',
-        layers: [{ source: sharedPublicFoodCardAsset, style: styles.sharedPublicFood }],
-      },
-    ],
-    [
-      {
-        backgroundColor: '#e9eef2',
-        date: '8월 18일',
-        showLink: !isPrivatePublicPuzzles,
-        layers: [{ source: sharedPublicCatCardAsset, style: styles.sharedPublicCat }],
-      },
-      {
-        backgroundColor: '#f5d6bf',
-        date: '8월 12일',
-        layers: [{ source: sharedPublicSunsetCardAsset, style: styles.sharedPublicSunset }],
-      },
-    ],
-  ];
+  // 디자인처럼 두 개씩 세 줄까지 보여준다.
+  const publicPuzzleRows = useMemo(() => {
+    const rows: ReceivedPuzzle[][] = [];
+    publicPuzzles.slice(0, 6).forEach((puzzle, index) => {
+      if (index % 2 === 0) {
+        rows.push([]);
+      }
+      rows[rows.length - 1].push(puzzle);
+    });
+    return rows;
+  }, [publicPuzzles]);
 
   return (
     <View style={styles.sharedLinkRoot}>
@@ -582,31 +762,34 @@ function ReceivedLinkScreen({
       </View>
 
       <Text style={styles.sharedPublicTitle}>{recipientName}님이 공개한 퍼즐</Text>
-      <Text style={styles.sharedPublicCount}>{isPrivatePublicPuzzles ? '0개' : '7개'}</Text>
-      <View style={styles.sharedPublicGrid}>
-        {publicPuzzleRows.map((row, rowIndex) => (
-          <View key={`public-row-${rowIndex}`} style={styles.sharedPublicRow}>
-            {row.map((card) => (
-              <SharedPublicPuzzleCard
-                key={card.date}
-                backgroundColor={card.backgroundColor}
-                date={card.date}
-                layers={card.layers}
-                locked={isPrivatePublicPuzzles}
-                showLink={card.showLink ?? true}
-                onPress={() => setSelectedPublicPuzzleDate(card.date)}
-              />
-            ))}
-          </View>
-        ))}
-      </View>
+      <Text style={styles.sharedPublicCount}>{isPrivatePublicPuzzles ? '0개' : `${publicPuzzles.length}개`}</Text>
+      {publicPuzzles.length === 0 ? (
+        <Text style={styles.sharedPublicEmptyText}>아직 공개한 퍼즐이 없어요.</Text>
+      ) : (
+        <View style={styles.sharedPublicGrid}>
+          {publicPuzzleRows.map((row, rowIndex) => (
+            <View key={`public-row-${rowIndex}`} style={styles.sharedPublicRow}>
+              {row.map((puzzle, columnIndex) => (
+                <SharedPublicPuzzleCard
+                  key={puzzle.id}
+                  backgroundColor={PUBLIC_PUZZLE_COLORS[(rowIndex * 2 + columnIndex) % PUBLIC_PUZZLE_COLORS.length]}
+                  date={formatMonthDay(puzzle.solvedAt ?? puzzle.receivedAt)}
+                  imageUri={puzzle.sourceUri}
+                  locked={isPrivatePublicPuzzles}
+                  onPress={() => setSelectedPublicPuzzle(puzzle)}
+                />
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
 
-      {selectedPublicPuzzleDate && (
+      {selectedPublicPuzzle && (
         <SharedPublicPuzzleModal
-          date={selectedPublicPuzzleDate}
-          onClose={() => setSelectedPublicPuzzleDate(null)}
-          onLater={() => setSelectedPublicPuzzleDate(null)}
-          onStart={onOpenPuzzle}
+          puzzle={selectedPublicPuzzle}
+          onClose={() => setSelectedPublicPuzzle(null)}
+          onLater={() => setSelectedPublicPuzzle(null)}
+          onStart={() => onOpenPuzzle(selectedPublicPuzzle)}
         />
       )}
     </View>
@@ -614,12 +797,12 @@ function ReceivedLinkScreen({
 }
 
 function SharedPublicPuzzleModal({
-  date,
+  puzzle,
   onClose,
   onLater,
   onStart,
 }: {
-  date: string;
+  puzzle: ReceivedPuzzle;
   onClose: () => void;
   onLater: () => void;
   onStart: () => void;
@@ -627,11 +810,11 @@ function SharedPublicPuzzleModal({
   return (
     <View style={styles.sharedPublicModalOverlay}>
       <View style={styles.sharedPublicModalCard}>
-        <Text style={styles.sharedPublicModalTitle}>{date} 퍼즐</Text>
+        <Text style={styles.sharedPublicModalTitle}>{formatMonthDay(puzzle.solvedAt ?? puzzle.receivedAt)} 퍼즐</Text>
         <Pressable onPress={onClose} style={({ pressed }) => [styles.sharedPublicModalClose, pressed && styles.pressed]}>
           <Image source={sharedPublicModalCloseIconAsset} style={styles.sharedPublicModalCloseIcon} resizeMode="contain" />
         </Pressable>
-        <Image source={sharedPublicModalPuzzleAsset} style={styles.sharedPublicModalPuzzle} resizeMode="cover" />
+        <Image source={{ uri: puzzle.sourceUri }} style={styles.sharedPublicModalPuzzle} resizeMode="cover" />
         <Pressable onPress={onLater} style={({ pressed }) => [styles.sharedPublicModalLaterButton, pressed && styles.pressed]}>
           <Text style={styles.sharedPublicModalButtonText}>아니요, 다음에 할게요</Text>
         </Pressable>
@@ -645,25 +828,14 @@ function SharedPublicPuzzleModal({
 
 function LinkCreatedScreen({ account, onBack, onDone }: { account: AuthAccount; onBack: () => void; onDone: () => void }) {
   const shareProfileLink = async () => {
-    const url = getProfileShareUrl(account.slug);
-    try {
-      const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
-      if (webNavigator?.share) {
-        await Share.share({
-          title: '푸러봐 링크',
-          message: `${account.name}님에게 퍼즐을 보내주세요!\n${url}`,
-          url,
-        });
-      } else {
-        await webNavigator?.clipboard?.writeText(url);
-        Alert.alert('링크가 복사됐어요', '친구에게 공유해 퍼즐을 받아보세요.');
-      }
-    } catch {
-      Alert.alert('공유를 다시 시도해주세요', '링크 공유 중 문제가 생겼어요.');
-      return;
+    const shared = await shareLink({
+      title: '푸러봐 링크',
+      text: `${account.name}님에게 퍼즐을 보내주세요!`,
+      url: getProfileShareUrl(account.slug),
+    });
+    if (shared) {
+      onDone();
     }
-
-    onDone();
   };
 
   return (
@@ -714,10 +886,10 @@ function AuthScreen({
       <TopBar title={isSignup ? '회원가입' : '로그인'} onBack={onBack} withBorder />
 
       <View style={styles.authHeroPuzzleWrap}>
-        <Image source={{ uri: authPuzzleIconAsset }} style={styles.authHeroPuzzle} resizeMode="contain" />
+        <Image source={splashYellowPuzzleAsset} style={styles.authHeroPuzzle} resizeMode="contain" />
       </View>
-      <PuzzleCrop image={splashPuzzleSheet} style={styles.authPinkPuzzle} cropStyle={styles.authPinkCrop} opacity={0.7} />
-      <PuzzleCrop image={splashPuzzleSheet} style={styles.authPurplePuzzle} cropStyle={styles.authPurpleCrop} opacity={0.65} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.authPinkPuzzle} cropStyle={styles.authPinkCrop} opacity={0.7} />
+      <PuzzleCrop image={splashPuzzleSheetAsset} style={styles.authPurplePuzzle} cropStyle={styles.authPurpleCrop} opacity={0.65} />
 
       <View style={styles.authTitleBlock}>
         <Text style={styles.authTitle}>{isSignup ? '퍼즐을 보관할' : '내 퍼즐함을'}{'\n'}{isSignup ? '공간을 만들어요' : '열어볼까요?'}</Text>
@@ -737,7 +909,11 @@ function AuthScreen({
         ) : null}
       </View>
 
-      {!isSignup ? <Text style={styles.authForgotText}>비밀번호를 잊으셨나요?</Text> : null}
+      {!isSignup ? (
+        <Pressable onPress={() => showToast('비밀번호 찾기는 준비 중이에요.')} style={({ pressed }) => [styles.authForgotButton, pressed && styles.pressed]}>
+          <Text style={styles.authForgotText}>비밀번호를 잊으셨나요?</Text>
+        </Pressable>
+      ) : null}
       {authError.length > 0 ? <Text style={styles.authErrorText}>{authError}</Text> : null}
 
       <Pressable
@@ -797,115 +973,6 @@ function AuthInput({
   );
 }
 
-function createProfileSlug(value: string) {
-  const rawSlug = value.trim().split('@')[0]?.trim() || 'minji';
-  return encodeURIComponent(rawSlug.replace(/\s+/g, '-').toLowerCase());
-}
-
-function authenticateAccount(credentials: AuthCredentials): { account: AuthAccount | null; error: string | null } {
-  const email = normalizeEmail(credentials.email);
-  const password = credentials.password.trim();
-
-  if (!email.includes('@')) {
-    return { account: null, error: '이메일 형식을 확인해주세요.' };
-  }
-
-  if (password.length < 4) {
-    return { account: null, error: '비밀번호는 4자 이상 입력해주세요.' };
-  }
-
-  const accounts = getStoredAuthAccounts();
-  const existingAccount = accounts.find((account) => account.email === email);
-
-  if (credentials.mode === 'signup') {
-    const name = credentials.name.trim();
-    if (name.length === 0) {
-      return { account: null, error: '이름을 입력해주세요.' };
-    }
-
-    if (credentials.password !== credentials.passwordConfirm) {
-      return { account: null, error: '비밀번호 확인이 일치하지 않아요.' };
-    }
-
-    if (existingAccount) {
-      return { account: null, error: '이미 가입된 이메일이에요. 로그인해주세요.' };
-    }
-
-    const account = { name, email, password, slug: createProfileSlug(name) };
-    saveStoredAuthAccounts([...accounts, account]);
-    saveStoredAuthSession(account);
-    return { account, error: null };
-  }
-
-  if (!existingAccount || existingAccount.password !== password) {
-    return { account: null, error: '이메일 또는 비밀번호가 맞지 않아요.' };
-  }
-
-  saveStoredAuthSession(existingAccount);
-  return { account: existingAccount, error: null };
-}
-
-function normalizeEmail(email: string) {
-  return email.trim().toLowerCase();
-}
-
-function getStoredAuthAccounts() {
-  try {
-    const storage = getBrowserStorage();
-    const value = storage?.getItem(AUTH_ACCOUNTS_KEY);
-    if (!value) {
-      return [];
-    }
-    const parsed = JSON.parse(value);
-    return Array.isArray(parsed) ? parsed.filter(isAuthAccount) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveStoredAuthAccounts(accounts: AuthAccount[]) {
-  try {
-    getBrowserStorage()?.setItem(AUTH_ACCOUNTS_KEY, JSON.stringify(accounts));
-  } catch {
-    // Storage can be unavailable in private browsing or restricted webviews.
-  }
-}
-
-function getStoredAuthSession() {
-  try {
-    const value = getBrowserStorage()?.getItem(AUTH_SESSION_KEY);
-    if (!value) {
-      return null;
-    }
-    const parsed = JSON.parse(value);
-    return isAuthAccount(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveStoredAuthSession(account: AuthAccount) {
-  try {
-    getBrowserStorage()?.setItem(AUTH_SESSION_KEY, JSON.stringify(account));
-  } catch {
-    // Storage can be unavailable in private browsing or restricted webviews.
-  }
-}
-
-function getBrowserStorage() {
-  return (globalThis as unknown as { localStorage?: WebStorage }).localStorage;
-}
-
-function isAuthAccount(value: unknown): value is AuthAccount {
-  const account = value as Partial<AuthAccount>;
-  return (
-    typeof account?.name === 'string' &&
-    typeof account.email === 'string' &&
-    typeof account.password === 'string' &&
-    typeof account.slug === 'string'
-  );
-}
-
 function CardCreateScreen({ onBack, onPickPhoto }: { onBack: () => void; onPickPhoto: () => void }) {
   return (
     <View style={styles.fill}>
@@ -949,8 +1016,7 @@ type HomePuzzleTileItem = {
   label: string;
   badge: 'practice' | 'newPink' | 'newYellow' | 'newPurple';
   imageStyle: StyleProp<ImageStyle>;
-  backgroundSource?: ImageSourcePropType;
-  backgroundStyle?: StyleProp<ImageStyle>;
+  onPress: () => void;
 };
 
 type HomePhotoTileItem = {
@@ -958,104 +1024,94 @@ type HomePhotoTileItem = {
   variant: 'photo';
   source: ImageSourcePropType;
   imageStyle?: StyleProp<ImageStyle>;
-  overlaySource?: ImageSourcePropType;
-  overlayStyle?: StyleProp<ImageStyle>;
+  onPress: () => void;
 };
+
+function createPracticeTileItem(onPress: () => void): HomePuzzleTileItem {
+  return {
+    id: 'practice',
+    source: mainPracticePuzzleAsset,
+    label: '연습용 퍼즐',
+    badge: 'practice',
+    imageStyle: styles.homePuzzlePracticeImage,
+    onPress,
+  };
+}
+
+// 아직 안 푼 퍼즐은 선물 상자로 보여준다. 상자 색은 분홍·노랑·보라 순서로 돌아간다.
+function createGiftTileItem(puzzle: ReceivedPuzzle, index: number, onPress: () => void): HomePuzzleTileItem {
+  const gifts = [
+    { source: mainPinkGiftPuzzleAsset, badge: 'newPink' as const },
+    { source: mainYellowGiftPuzzleAsset, badge: 'newYellow' as const },
+    { source: mainReceivedPurplePuzzleAsset, badge: 'newPurple' as const },
+  ];
+  const gift = gifts[index % gifts.length];
+
+  return {
+    id: puzzle.id,
+    source: gift.source,
+    label: '친구가 보낸 퍼즐',
+    badge: gift.badge,
+    imageStyle: styles.homePuzzleGiftImage,
+    onPress,
+  };
+}
 
 function HomeScreen({
   account,
-  sentPuzzleUri,
-  receivedPuzzleUri,
+  receivedPuzzles,
+  sentPuzzles,
+  noticePuzzle,
+  onDismissNotice,
   onCreatePuzzle,
+  onOpenPractice,
   onOpenReceivedPuzzle,
+  onOpenSentPuzzle,
   onOpenPuzzleBox,
   onOpenProfile,
 }: {
   account: AuthAccount;
-  sentPuzzleUri: string | null;
-  receivedPuzzleUri: string | null;
+  receivedPuzzles: ReceivedPuzzle[];
+  sentPuzzles: PuzzleRecord[];
+  noticePuzzle: ReceivedPuzzle | null;
+  onDismissNotice: (puzzle: ReceivedPuzzle) => void;
   onCreatePuzzle: () => void;
-  onOpenReceivedPuzzle: () => void;
+  onOpenPractice: () => void;
+  onOpenReceivedPuzzle: (puzzle: ReceivedPuzzle) => void;
+  onOpenSentPuzzle: (puzzle: PuzzleRecord) => void;
   onOpenPuzzleBox: () => void;
   onOpenProfile: () => void;
 }) {
-  const [isReceivedNoticeVisible, setIsReceivedNoticeVisible] = useState(Boolean(receivedPuzzleUri));
-
-  useEffect(() => {
-    if (receivedPuzzleUri) {
-      setIsReceivedNoticeVisible(true);
-    }
-  }, [receivedPuzzleUri]);
-
-  const receivedPuzzles: HomePuzzleTileItem[] = [
-    {
-      id: 'received-practice',
-      source: mainPracticePuzzleAsset,
-      label: '연습용 퍼즐',
-      badge: 'practice',
-      imageStyle: styles.homePuzzlePracticeImage,
-    },
-    {
-      id: 'received-pink-gift',
-      source: mainPinkGiftPuzzleAsset,
-      label: '친구가 보낸 퍼즐',
-      badge: 'newPink',
-      imageStyle: styles.homePuzzleGiftImage,
-    },
-    receivedPuzzleUri
-      ? {
-          id: 'received-live-puzzle',
-          source: mainReceivedPurplePuzzleAsset,
-          backgroundSource: { uri: receivedPuzzleUri },
-          backgroundStyle: styles.homeReceivedPuzzleBackgroundImage,
-          label: '친구가 보낸 퍼즐',
-          badge: 'newPurple',
-          imageStyle: styles.homeReceivedPurplePuzzleImage,
-        }
-      : {
-          id: 'received-yellow-gift',
-          source: mainYellowGiftPuzzleAsset,
-          label: '친구가 보낸 퍼즐',
-          badge: 'newYellow',
-          imageStyle: styles.homePuzzleGiftImage,
-        },
+  const weekAgo = Date.now() - WEEK_MS;
+  let giftIndex = 0;
+  // 피그마처럼 안 푼 퍼즐은 선물 상자, 이미 푼 퍼즐은 사진으로 보여준다.
+  const receivedTiles: Array<HomePuzzleTileItem | HomePhotoTileItem> = [
+    createPracticeTileItem(onOpenPractice),
+    ...receivedPuzzles
+      .filter((puzzle) => puzzle.receivedAt >= weekAgo)
+      .sort((a, b) => Number(a.solvedAt !== null) - Number(b.solvedAt !== null))
+      .map((puzzle): HomePuzzleTileItem | HomePhotoTileItem =>
+        puzzle.solvedAt === null
+          ? createGiftTileItem(puzzle, giftIndex++, () => onOpenReceivedPuzzle(puzzle))
+          : {
+              id: puzzle.id,
+              variant: 'photo',
+              source: { uri: puzzle.sourceUri },
+              imageStyle: styles.homeSentPhotoImage,
+              onPress: () => onOpenReceivedPuzzle(puzzle),
+            },
+      ),
   ];
-  const sentPuzzles: HomePhotoTileItem[] = sentPuzzleUri
-    ? [
-        { id: 'sent-mine', variant: 'photo', source: { uri: sentPuzzleUri }, imageStyle: styles.homeSentPhotoImage },
-        { id: 'sent-beach-friends', variant: 'photo', source: mainSentBeachFriendsCardAsset, imageStyle: styles.homeSentPhotoImage },
-        {
-          id: 'sent-flowers',
-          variant: 'photo',
-          source: mainSentFlowerCardBaseAsset,
-          imageStyle: styles.homeSentFlowerImage,
-          overlaySource: mainSentFlowerCardOverlayAsset,
-          overlayStyle: styles.homeSentFlowerImage,
-        },
-        { id: 'sent-dog', variant: 'photo', source: mainSentDogCardAsset, imageStyle: styles.homeSentDogImage },
-      ]
-    : [];
+  const sentTiles: HomePhotoTileItem[] = sentPuzzles.slice(0, 10).map((puzzle) => ({
+    id: puzzle.id,
+    variant: 'photo',
+    source: { uri: puzzle.sourceUri },
+    imageStyle: styles.homeSentPhotoImage,
+    onPress: () => onOpenSentPuzzle(puzzle),
+  }));
 
-  const shareProfileLink = async () => {
-    const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
-    const shareUrl = `https://puroba.kr/${account.slug}`;
-
-    try {
-      if (webNavigator?.share) {
-        await webNavigator.share({ title: '내 푸러봐 링크', text: '퍼즐로 마음을 보내주세요.', url: shareUrl });
-        return;
-      }
-
-      await Share.share({ title: '내 푸러봐 링크', message: shareUrl, url: shareUrl });
-    } catch {
-      try {
-        await webNavigator?.clipboard?.writeText(shareUrl);
-        Alert.alert('링크 복사 완료', '내 링크를 복사했어요.');
-      } catch {
-        Alert.alert('공유할 수 없어요', '이 브라우저에서는 공유 기능을 지원하지 않아요.');
-      }
-    }
-  };
+  const shareProfileLink = () =>
+    shareLink({ title: '내 푸러봐 링크', text: '퍼즐로 마음을 보내주세요.', url: getProfileShareUrl(account.slug) });
 
   return (
     <View style={styles.homeRoot}>
@@ -1083,21 +1139,21 @@ function HomeScreen({
         style={styles.homeReceivedRow}
         contentContainerStyle={styles.homePuzzleRowContent}
       >
-        {receivedPuzzles.map((item) => (
-          <HomePuzzleTile key={item.id} item={item} />
+        {receivedTiles.map((item) => (
+          <HomeTile key={item.id} item={item} />
         ))}
       </ScrollView>
 
       <HomeSectionHeader title="최근 보낸 퍼즐" style={styles.homeSentHeader} highlightStyle={styles.homeSentHighlight} onPressMore={onOpenPuzzleBox} />
       <Image source={mainTabGlowIconAsset} style={styles.homeTabGlow} resizeMode="stretch" />
-      {sentPuzzles.length > 0 ? (
+      {sentTiles.length > 0 ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
           style={styles.homeSentRow}
           contentContainerStyle={styles.homePuzzleRowContent}
         >
-          {sentPuzzles.map((item) => (
+          {sentTiles.map((item) => (
             <HomeTile key={item.id} item={item} />
           ))}
         </ScrollView>
@@ -1109,13 +1165,13 @@ function HomeScreen({
       )}
 
       <HomeTabBar activeTab="home" onHome={() => undefined} onPuzzleBox={onOpenPuzzleBox} onProfile={onOpenProfile} />
-      {receivedPuzzleUri && isReceivedNoticeVisible && (
+      {noticePuzzle && (
         <ReceivedPuzzleNotice
-          onClose={() => setIsReceivedNoticeVisible(false)}
-          onLater={() => setIsReceivedNoticeVisible(false)}
+          onClose={() => onDismissNotice(noticePuzzle)}
+          onLater={() => onDismissNotice(noticePuzzle)}
           onStart={() => {
-            setIsReceivedNoticeVisible(false);
-            onOpenReceivedPuzzle();
+            onDismissNotice(noticePuzzle);
+            onOpenReceivedPuzzle(noticePuzzle);
           }}
         />
       )}
@@ -1155,8 +1211,7 @@ function HomePuzzleTile({ item }: { item: HomePuzzleTileItem }) {
   const isYellow = item.badge === 'newYellow';
 
   return (
-    <View style={styles.homePuzzleTile}>
-      {item.backgroundSource && <Image source={item.backgroundSource} style={item.backgroundStyle} resizeMode="cover" />}
+    <Pressable onPress={item.onPress} style={({ pressed }) => [styles.homePuzzleTile, pressed && styles.pressed]}>
       <View
         style={[
           styles.homePuzzleBadge,
@@ -1169,16 +1224,15 @@ function HomePuzzleTile({ item }: { item: HomePuzzleTileItem }) {
       </View>
       <Image source={item.source} style={item.imageStyle} resizeMode="contain" />
       <Text style={styles.homePuzzleLabel}>{item.label}</Text>
-    </View>
+    </Pressable>
   );
 }
 
 function HomePhotoTile({ item, tileStyle }: { item: HomePhotoTileItem; tileStyle?: StyleProp<ViewStyle> }) {
   return (
-    <View style={[styles.homePhotoTile, tileStyle]}>
+    <Pressable onPress={item.onPress} style={({ pressed }) => [styles.homePhotoTile, tileStyle, pressed && styles.pressed]}>
       <Image source={item.source} style={[styles.homePhotoTileImage, item.imageStyle]} resizeMode="cover" />
-      {item.overlaySource && <Image source={item.overlaySource} style={[styles.homePhotoTileImage, item.overlayStyle]} resizeMode="cover" />}
-    </View>
+    </Pressable>
   );
 }
 
@@ -1191,12 +1245,19 @@ function ProfileScreen({
   onBack,
   onHome,
   onPuzzleBox,
+  onLogout,
+  onDeleteAccount,
 }: {
   account: AuthAccount;
   onBack: () => void;
   onHome: () => void;
   onPuzzleBox: () => void;
+  onLogout: () => void;
+  onDeleteAccount: () => void;
 }) {
+  const [confirmAction, setConfirmAction] = useState<'logout' | 'delete' | null>(null);
+  const showPreparing = () => showToast('준비 중이에요.');
+
   return (
     <View style={styles.profileRoot}>
       <View style={styles.profileTopBar}>
@@ -1211,24 +1272,43 @@ function ProfileScreen({
           <Image source={profilePuzzleAvatarAsset} style={styles.profileAvatarImage} resizeMode="cover" />
         </View>
         <Text style={styles.profileName}>{account.name}</Text>
-        <Text style={styles.profileCreatedAt}>계정 생성일 2026.08.20</Text>
+        {account.createdAt ? <Text style={styles.profileCreatedAt}>계정 생성일 {formatFullDate(account.createdAt)}</Text> : null}
       </View>
 
       <ProfileSectionHeader title="계정 정보" top={238} />
-      <ProfileRow label="이름" top={279} />
-      <ProfileRow label="이메일" top={329} />
-      <ProfileRow label="비밀번호" top={380} />
+      <ProfileRow label="이름" top={279} onPress={showPreparing} />
+      <ProfileRow label="이메일" top={329} onPress={showPreparing} />
+      <ProfileRow label="비밀번호" top={380} onPress={showPreparing} />
 
       <ProfileSectionHeader title="서비스 정보" top={428} />
-      <ProfileRow label="이용약관" top={471} />
-      <ProfileRow label="개인정보 처리 방침" top={520} />
-      <ProfileRow label="문의하기" top={572} />
+      <ProfileRow label="이용약관" top={471} onPress={showPreparing} />
+      <ProfileRow label="개인정보 처리 방침" top={520} onPress={showPreparing} />
+      <ProfileRow label="문의하기" top={572} onPress={showPreparing} />
 
       <ProfileSectionHeader title="계정 관리" top={622} />
-      <ProfileRow label="로그아웃" top={666} isAccent />
-      <ProfileRow label="회원 탈퇴" top={716} showChevron={false} />
+      <ProfileRow label="로그아웃" top={666} isAccent showChevron={false} onPress={() => setConfirmAction('logout')} />
+      <ProfileRow label="회원 탈퇴" top={716} showChevron={false} onPress={() => setConfirmAction('delete')} />
 
       <HomeTabBar activeTab="profile" onHome={onHome} onPuzzleBox={onPuzzleBox} onProfile={() => undefined} />
+
+      {confirmAction === 'logout' && (
+        <ConfirmDialog
+          title="로그아웃할까요?"
+          message={'다시 로그인하면\n퍼즐함을 그대로 볼 수 있어요.'}
+          confirmLabel="로그아웃"
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={onLogout}
+        />
+      )}
+      {confirmAction === 'delete' && (
+        <ConfirmDialog
+          title="정말 탈퇴할까요?"
+          message={'보낸 퍼즐과 받은 퍼즐이\n모두 지워지고 되돌릴 수 없어요.'}
+          confirmLabel="탈퇴하기"
+          onCancel={() => setConfirmAction(null)}
+          onConfirm={onDeleteAccount}
+        />
+      )}
     </View>
   );
 }
@@ -1246,87 +1326,63 @@ function ProfileRow({
   top,
   isAccent = false,
   showChevron = true,
+  onPress,
 }: {
   label: string;
   top: number;
   isAccent?: boolean;
   showChevron?: boolean;
+  onPress?: () => void;
 }) {
   return (
-    <View style={[styles.profileRow, { top }]}>
+    <Pressable disabled={!onPress} onPress={onPress} style={({ pressed }) => [styles.profileRow, { top }, pressed && styles.pressed]}>
       <Text style={[styles.profileRowText, isAccent && styles.profileRowTextAccent]}>{label}</Text>
       {showChevron && <Image source={profileChevronRightIconAsset} style={styles.profileRowChevron} resizeMode="contain" />}
       <View style={styles.profileRowDivider} />
-    </View>
+    </Pressable>
   );
 }
 
 function PuzzleBoxScreen({
+  initialTab,
+  receivedPuzzles,
+  sentPuzzles,
   onBack,
   onHome,
   onProfile,
   onCreatePuzzle,
-  receivedPuzzleUri,
-  sentPuzzleUri,
-  solvedPreviewUri,
+  onOpenPractice,
+  onOpenReceivedPuzzle,
+  onOpenSentPuzzle,
 }: {
+  initialTab: 'received' | 'sent';
+  receivedPuzzles: ReceivedPuzzle[];
+  sentPuzzles: PuzzleRecord[];
   onBack: () => void;
   onHome: () => void;
   onProfile: () => void;
   onCreatePuzzle: () => void;
-  receivedPuzzleUri: string | null;
-  sentPuzzleUri: string | null;
-  solvedPreviewUri: string | null;
+  onOpenPractice: () => void;
+  onOpenReceivedPuzzle: (puzzle: ReceivedPuzzle) => void;
+  onOpenSentPuzzle: (puzzle: PuzzleRecord) => void;
 }) {
-  const [activePuzzleBoxTab, setActivePuzzleBoxTab] = useState<'received' | 'sent'>('received');
-  const unsolvedPuzzles: HomePuzzleTileItem[] = [
-    {
-      id: 'box-practice',
-      source: mainPracticePuzzleAsset,
-      label: '연습용 퍼즐',
-      badge: 'practice',
-      imageStyle: styles.homePuzzlePracticeImage,
-    },
-    {
-      id: 'box-pink-gift',
-      source: mainPinkGiftPuzzleAsset,
-      label: '친구가 보낸 퍼즐',
-      badge: 'newPink',
-      imageStyle: styles.homePuzzleGiftImage,
-    },
-    receivedPuzzleUri
-      ? {
-          id: 'box-live-puzzle',
-          source: mainReceivedPurplePuzzleAsset,
-          backgroundSource: { uri: receivedPuzzleUri },
-          backgroundStyle: styles.homeReceivedPuzzleBackgroundImage,
-          label: '친구가 보낸 퍼즐',
-          badge: 'newPurple',
-          imageStyle: styles.homeReceivedPurplePuzzleImage,
-        }
-      : {
-          id: 'box-yellow-gift',
-          source: mainYellowGiftPuzzleAsset,
-          label: '친구가 보낸 퍼즐',
-          badge: 'newYellow',
-          imageStyle: styles.homePuzzleGiftImage,
-        },
+  const [activePuzzleBoxTab, setActivePuzzleBoxTab] = useState<'received' | 'sent'>(initialTab);
+  const unsolvedTiles: HomePuzzleTileItem[] = [
+    createPracticeTileItem(onOpenPractice),
+    ...receivedPuzzles
+      .filter((puzzle) => puzzle.solvedAt === null)
+      .map((puzzle, index) => createGiftTileItem(puzzle, index, () => onOpenReceivedPuzzle(puzzle))),
   ];
-  const solvedPuzzles: HomePhotoTileItem[] = [
-    { id: 'box-solved-main', variant: 'photo', source: solvedPreviewUri ? { uri: solvedPreviewUri } : mainSentBeachFriendsCardAsset, imageStyle: styles.puzzleBoxSolvedImage },
-  ];
-  const sentPuzzles: HomePhotoTileItem[] = [
-    {
-      id: 'box-sent-flowers',
-      variant: 'photo',
-      source: mainSentFlowerCardBaseAsset,
-      imageStyle: styles.puzzleBoxSentFlowerImage,
-      overlaySource: mainSentFlowerCardOverlayAsset,
-      overlayStyle: styles.puzzleBoxSentFlowerImageLarge,
-    },
-    { id: 'box-sent-dog', variant: 'photo', source: mainSentDogCardAsset, imageStyle: styles.puzzleBoxSentDogImage },
-    { id: 'box-sent-beach', variant: 'photo', source: mainSentBeachFoodCardAsset, imageStyle: styles.puzzleBoxSentBeachImage },
-  ];
+  const solvedPuzzles = receivedPuzzles
+    .filter((puzzle) => puzzle.solvedAt !== null)
+    .sort((a, b) => (b.solvedAt ?? 0) - (a.solvedAt ?? 0));
+  const sentTiles: HomePhotoTileItem[] = sentPuzzles.map((puzzle) => ({
+    id: puzzle.id,
+    variant: 'photo',
+    source: { uri: puzzle.sourceUri },
+    imageStyle: styles.puzzleBoxSentPhotoImage,
+    onPress: () => onOpenSentPuzzle(puzzle),
+  }));
   const isReceivedTab = activePuzzleBoxTab === 'received';
 
   return (
@@ -1353,31 +1409,73 @@ function PuzzleBoxScreen({
           <Text style={styles.puzzleBoxUnsolvedTitle}>아직 안 푼 퍼즐</Text>
           <View style={styles.puzzleBoxUnsolvedHighlight} />
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.puzzleBoxUnsolvedRow} contentContainerStyle={styles.puzzleBoxRowContent}>
-            {unsolvedPuzzles.map((item) => (
+            {unsolvedTiles.map((item) => (
               <HomePuzzleTile key={item.id} item={item} />
             ))}
           </ScrollView>
 
           <Text style={styles.puzzleBoxSolvedTitle}>최근 푼 퍼즐</Text>
-          <View style={styles.puzzleBoxSolvedCard}>
-            <Image source={solvedPuzzles[0].source} style={solvedPuzzles[0].imageStyle} resizeMode="cover" />
-            <View style={styles.puzzleBoxPublicBadge}>
-              <Text style={styles.puzzleBoxPublicBadgeText}>공개</Text>
-            </View>
-          </View>
+          {solvedPuzzles.length > 0 ? (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.puzzleBoxSolvedRow} contentContainerStyle={styles.puzzleBoxSolvedRowContent}>
+              {solvedPuzzles.map((puzzle) => (
+                <View key={puzzle.id} style={styles.puzzleBoxSolvedCard}>
+                  <Image source={{ uri: puzzle.sourceUri }} style={styles.puzzleBoxSolvedImage} resizeMode="cover" />
+                  <View style={styles.puzzleBoxPublicBadge}>
+                    <Text style={styles.puzzleBoxPublicBadgeText}>공개</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <Text style={styles.puzzleBoxSolvedEmptyText}>아직 푼 퍼즐이 없어요.</Text>
+          )}
         </>
-      ) : (
-        <View style={styles.puzzleBoxSentGrid}>
-          {sentPuzzles.map((item) => (
+      ) : sentTiles.length > 0 ? (
+        <ScrollView style={styles.puzzleBoxSentScroll} contentContainerStyle={styles.puzzleBoxSentGrid} showsVerticalScrollIndicator={false}>
+          {sentTiles.map((item) => (
             <HomePhotoTile key={item.id} item={item} tileStyle={styles.puzzleBoxSentTile} />
           ))}
-        </View>
+        </ScrollView>
+      ) : (
+        <Pressable onPress={onCreatePuzzle} style={styles.puzzleBoxSentEmpty}>
+          <Image source={mainEmptySentEnvelopeAsset} style={styles.homeSentEmptyImage} resizeMode="contain" />
+          <Text style={styles.homeSentEmptyText}>아직 보낸 퍼즐이 없습니다.</Text>
+        </Pressable>
       )}
       <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.puzzleBoxCreateButton, pressed && styles.pressed]}>
         <Text style={styles.puzzleBoxCreateButtonText}>+</Text>
       </Pressable>
 
       <HomeTabBar activeTab="puzzleBox" onHome={onHome} onPuzzleBox={() => undefined} onProfile={onProfile} />
+    </View>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <View style={styles.receivedNoticeOverlay}>
+      <View style={styles.confirmCard}>
+        <Text style={styles.confirmTitle}>{title}</Text>
+        <Text style={styles.confirmMessage}>{message}</Text>
+        <Pressable onPress={onCancel} style={({ pressed }) => [styles.confirmCancelButton, pressed && styles.pressed]}>
+          <Text style={styles.receivedNoticeLaterText}>취소</Text>
+        </Pressable>
+        <Pressable onPress={onConfirm} style={({ pressed }) => [styles.confirmOkButton, pressed && styles.pressed]}>
+          <Text style={styles.receivedNoticeStartText}>{confirmLabel}</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -1542,7 +1640,7 @@ function PuzzleDecorateScreen({
   screenScale: number;
   onBack: () => void;
   onChangePhoto: () => void;
-  onComplete: (puzzleUri: string, puzzleSourceUri: string, gridSize: GridSize, strokes: DrawStroke[], textStickers: TextSticker[]) => void;
+  onComplete: (puzzleSourceUri: string, gridSize: GridSize) => void;
 }) {
   const [tool, setTool] = useState<'draw' | 'text'>('draw');
   const [gridSize, setGridSize] = useState<GridSize>(3);
@@ -1760,7 +1858,7 @@ function PuzzleDecorateScreen({
       <Pressable
         onPress={async () => {
           const puzzleSourceUri = await createPuzzleArtworkImage(photoUri, strokes, textStickers);
-          onComplete(puzzleUri, puzzleSourceUri, gridSize, strokes, textStickers);
+          onComplete(puzzleSourceUri, gridSize);
         }}
         style={({ pressed }) => [styles.completeButton, pressed && styles.pressed]}
       >
@@ -1820,53 +1918,35 @@ function AiDecorateScreen({
 }
 
 function PuzzleCompleteScreen({
-  puzzleUri,
-  puzzleSourceUri,
-  gridSize,
-  strokes,
-  textStickers,
+  puzzle,
+  isLoggedIn,
   onBack,
+  onKeepPuzzle,
 }: {
-  puzzleUri: string;
-  puzzleSourceUri: string;
-  gridSize: GridSize;
-  strokes: DrawStroke[];
-  textStickers: TextSticker[];
+  puzzle: PuzzleRecord;
+  isLoggedIn: boolean;
   onBack: () => void;
+  onKeepPuzzle: () => void;
 }) {
-  const drawingOverlayUri = useMemo(() => createDrawingOverlay(strokes), [strokes]);
-  const sharePuzzleId = useMemo(() => createSharedPuzzleId(), []);
-  const shareUrl = useMemo(() => getShareUrl(sharePuzzleId), [sharePuzzleId]);
+  // 받는 사람이 맞추게 될 모습 그대로(그림·글씨 + 칸 선) 보여준다.
+  const [displayPuzzleUri, setDisplayPuzzleUri] = useState(puzzle.sourceUri);
 
   useEffect(() => {
-    saveStoredPuzzleUri(puzzleUri, sharePuzzleId, puzzleSourceUri, gridSize);
-  }, [puzzleUri, puzzleSourceUri, gridSize, sharePuzzleId]);
+    let isMounted = true;
 
-  const sharePuzzle = async () => {
-    const title = '퍼즐이 완성됐어요!';
-    const text = '내가 만든 퍼즐을 확인해보세요.';
-    const webNavigator = (globalThis as unknown as { navigator?: WebNavigator }).navigator;
-
-    try {
-      if (webNavigator?.share) {
-        await webNavigator.share({ title, text, url: shareUrl });
-        return;
+    createPuzzleImage(puzzle.sourceUri, puzzle.gridSize).then((nextUri) => {
+      if (isMounted) {
+        setDisplayPuzzleUri(nextUri);
       }
+    });
 
-      await Share.share({
-        title,
-        message: `${text}\n${shareUrl}`,
-        url: shareUrl,
-      });
-    } catch (error) {
-      try {
-        await webNavigator?.clipboard?.writeText(shareUrl);
-        Alert.alert('링크 복사 완료', '공유 링크를 복사했어요.');
-      } catch {
-        Alert.alert('공유할 수 없어요', '이 브라우저에서는 공유 기능을 지원하지 않아요.');
-      }
-    }
-  };
+    return () => {
+      isMounted = false;
+    };
+  }, [puzzle.sourceUri, puzzle.gridSize]);
+
+  const sharePuzzle = () =>
+    shareLink({ title: '퍼즐이 완성됐어요!', text: '내가 만든 퍼즐을 확인해보세요.', url: getShareUrl(puzzle.id) });
 
   return (
     <View style={styles.fill}>
@@ -1879,41 +1959,23 @@ function PuzzleCompleteScreen({
       <Text style={styles.completeSubtitle}>특별한 메시지를 전달할 준비가 완료됐어요</Text>
 
       <View style={styles.completedPuzzleFrame}>
-        <Image source={{ uri: puzzleUri }} style={styles.completedPuzzleImage} resizeMode="cover" />
-        <Image source={{ uri: drawingOverlayUri }} style={styles.completedDrawingOverlay} resizeMode="stretch" />
-        {textStickers.map((sticker) => (
-          <Text
-            key={sticker.id}
-            style={[
-              styles.completedTextSticker,
-              {
-                color: sticker.color,
-                left: sticker.x,
-                top: sticker.y,
-                transform: [{ translateX: -70 }, { translateY: -16 }],
-              },
-            ]}
-          >
-            {sticker.text}
-          </Text>
-        ))}
+        <Image source={{ uri: displayPuzzleUri }} style={styles.completedPuzzleImage} resizeMode="cover" />
       </View>
 
       <Pressable onPress={sharePuzzle} style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}>
         <Text style={styles.primaryText}>공유하기</Text>
       </Pressable>
 
-      <View style={styles.loginNotice}>
-        <Text style={styles.loginNoticeTitle}>보낸 퍼즐, 간직할까요?</Text>
-        <Text style={styles.loginNoticeBody}>로그인하면 내가 보낸 퍼즐을 모아볼 수 있어요</Text>
+      <Pressable onPress={onKeepPuzzle} style={({ pressed }) => [styles.loginNotice, pressed && styles.pressed]}>
+        <Text style={styles.loginNoticeTitle}>{isLoggedIn ? '보낸 퍼즐을 퍼즐함에 담았어요' : '보낸 퍼즐, 간직할까요?'}</Text>
+        <Text style={styles.loginNoticeBody}>{isLoggedIn ? '퍼즐함에서 언제든 다시 볼 수 있어요' : '로그인하면 내가 보낸 퍼즐을 모아볼 수 있어요'}</Text>
         <Image source={loginPuzzleAsset} style={styles.loginNoticeImage} resizeMode="cover" />
-      </View>
+      </Pressable>
     </View>
   );
 }
 
 function PuzzleSolveScreen({
-  puzzleUri,
   puzzleSourceUri,
   gridSize,
   screenScale,
@@ -1922,14 +1984,13 @@ function PuzzleSolveScreen({
   onBack,
   onComplete,
 }: {
-  puzzleUri: string;
   puzzleSourceUri: string;
   gridSize: GridSize;
   screenScale: number;
   screenOffsetX: number;
   screenOffsetY: number;
   onBack: () => void;
-  onComplete: (puzzleUri: string) => void;
+  onComplete: () => void;
 }) {
   const totalPieces = gridSize * gridSize;
   const boardSize = 302;
@@ -2100,7 +2161,9 @@ function PuzzleSolveScreen({
                 }}
                 style={[styles.solvePieceButton, trayPieceStyle, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
               >
-                <Image source={{ uri: pieceUris[pieceIndex] ?? solveSamplePieces }} style={styles.solvePieceImage} resizeMode="cover" />
+                {pieceUris[pieceIndex] ? (
+                  <Image source={{ uri: pieceUris[pieceIndex] }} style={styles.solvePieceImage} resizeMode="cover" />
+                ) : null}
               </View>
             ))}
           </View>
@@ -2121,7 +2184,7 @@ function PuzzleSolveScreen({
       <View style={styles.solveBottomSheet}>
         <Pressable
           disabled={placedCount < totalPieces}
-          onPress={() => onComplete(puzzleSourceUri)}
+          onPress={onComplete}
           style={({ pressed }) => [styles.solveCompleteButton, placedCount < totalPieces && styles.disabledButton, pressed && placedCount === totalPieces && styles.pressed]}
         >
           <Text style={styles.primaryText}>퍼즐 완성하기</Text>
@@ -2157,15 +2220,22 @@ function shufflePieceOrder(pieceCount: number) {
 function SolvedPuzzleCompleteScreen({
   puzzleUri,
   gridSize,
+  isPractice,
+  isLoggedIn,
   onBack,
-  onLogin,
+  onSave,
+  onCreatePuzzle,
 }: {
   puzzleUri: string;
   gridSize: GridSize;
+  isPractice: boolean;
+  isLoggedIn: boolean;
   onBack: () => void;
-  onLogin: () => void;
+  onSave: () => void;
+  onCreatePuzzle: () => void;
 }) {
   const [displayPuzzleUri, setDisplayPuzzleUri] = useState(puzzleUri);
+  const saveLabel = isLoggedIn ? (isPractice ? '홈으로 가기' : '퍼즐함에서 보기') : isPractice ? '로그인하기' : '로그인하고 저장하기';
 
   useEffect(() => {
     let isMounted = true;
@@ -2185,7 +2255,7 @@ function SolvedPuzzleCompleteScreen({
     <View style={styles.fill}>
       <TopBar title="퍼즐 완성" onBack={onBack} withBorder />
 
-      <Image source={{ uri: solveCompleteCelebrationAsset }} style={styles.solvedCompleteCelebration} resizeMode="cover" />
+      <Image source={celebrationAsset} style={styles.solvedCompleteCelebration} resizeMode="contain" />
       <Text style={styles.solvedCompleteTitle}>
         <Text style={styles.completeTitleAccent}>퍼즐</Text>이 완성됐어요!
       </Text>
@@ -2195,14 +2265,14 @@ function SolvedPuzzleCompleteScreen({
         <Image source={{ uri: displayPuzzleUri }} style={styles.solvedCompletePuzzleImage} resizeMode="cover" />
       </View>
 
-      <Pressable onPress={onLogin} style={({ pressed }) => [styles.solvedSaveButton, pressed && styles.pressed]}>
-        <Text style={styles.primaryText}>로그인하고 저장하기</Text>
+      <Pressable onPress={onSave} style={({ pressed }) => [styles.solvedSaveButton, pressed && styles.pressed]}>
+        <Text style={styles.primaryText}>{saveLabel}</Text>
       </Pressable>
 
-      <Pressable onPress={onLogin} style={({ pressed }) => [styles.solvedLoginNotice, pressed && styles.pressed]}>
-        <Text style={styles.solvedLoginNoticeTitle}>이 순간을 함께 나누고 싶다면?</Text>
+      <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.solvedLoginNotice, pressed && styles.pressed]}>
+        <Text style={styles.solvedLoginNoticeTitle}>나도 널 위해서 만들어줄게!</Text>
         <Text style={styles.solvedLoginNoticeBody}>나만의 퍼즐을 만들어 선물해보세요.</Text>
-        <Image source={{ uri: solveCompletePuzzleAsset }} style={styles.solvedLoginNoticeImage} resizeMode="cover" />
+        <Image source={loginPuzzleAsset} style={styles.solvedLoginNoticeImage} resizeMode="cover" />
       </Pressable>
     </View>
   );
@@ -2378,6 +2448,30 @@ const STATUS_STRIP = 49;
 const FRAME_HEIGHT = DESIGN_HEIGHT + STATUS_STRIP;
 
 const styles = StyleSheet.create({
+  toastWrap: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 48,
+    alignItems: 'center',
+    zIndex: 50,
+  },
+  toast: {
+    maxWidth: 358,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: 22,
+    backgroundColor: 'rgba(20,21,23,0.88)',
+  },
+  toastText: {
+    color: '#fff',
+    fontFamily: designSystem.font.family,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
   root: {
     flex: 1,
     backgroundColor: designSystem.color.background,
@@ -2645,10 +2739,12 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0,
   },
-  authForgotText: {
+  authForgotButton: {
     position: 'absolute',
     right: 29,
     top: 506,
+  },
+  authForgotText: {
     color: designSystem.color.primary,
     fontSize: 13,
     fontWeight: '700',
@@ -2833,6 +2929,24 @@ const styles = StyleSheet.create({
   sharedPublicPuzzleImage: {
     position: 'absolute',
   },
+  sharedPublicPuzzlePhoto: {
+    left: 0,
+    top: -26,
+    width: 173.5,
+    height: 173.5,
+  },
+  sharedPublicEmptyText: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 470,
+    color: designSystem.color.muted,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '500',
+    textAlign: 'center',
+    letterSpacing: 0,
+  },
   sharedPublicLockedScrim: {
     position: 'absolute',
     left: -10,
@@ -2856,10 +2970,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   sharedPublicPuzzleDate: {
-    color: '#666',
+    color: '#8b8496',
     fontSize: 11,
     lineHeight: 16,
-    fontWeight: '500',
+    fontWeight: '400',
     letterSpacing: 0,
     includeFontPadding: false,
   },
@@ -2868,7 +2982,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sharedPublicPuzzleLinkText: {
-    color: '#141517',
+    color: '#a26ffd',
     fontSize: 11,
     lineHeight: 16,
     fontWeight: '600',
@@ -2879,50 +2993,8 @@ const styles = StyleSheet.create({
     width: 11,
     height: 7,
     marginLeft: 3,
-    tintColor: '#141517',
+    tintColor: '#a26ffd',
     transform: [{ rotate: '90deg' }],
-  },
-  sharedPublicFlowerBase: {
-    left: -9,
-    top: -43,
-    width: 183,
-    height: 207,
-  },
-  sharedPublicFlowerOverlay: {
-    left: -9,
-    top: -43,
-    width: 183,
-    height: 207,
-  },
-  sharedPublicBeachFriends: {
-    left: -1,
-    top: -45,
-    width: 174,
-    height: 188,
-  },
-  sharedPublicDog: {
-    left: 0,
-    top: -22,
-    width: 176,
-    height: 219,
-  },
-  sharedPublicFood: {
-    left: -1,
-    top: -8,
-    width: 174,
-    height: 256,
-  },
-  sharedPublicCat: {
-    left: -1,
-    top: -26,
-    width: 176,
-    height: 197,
-  },
-  sharedPublicSunset: {
-    left: -15,
-    top: -6,
-    width: 189,
-    height: 207,
   },
   sharedPublicModalOverlay: {
     position: 'absolute',
@@ -3349,20 +3421,6 @@ const styles = StyleSheet.create({
     width: 77,
     height: 77,
   },
-  homeReceivedPuzzleBackgroundImage: {
-    position: 'absolute',
-    left: 0,
-    top: -8,
-    width: 111,
-    height: 163,
-  },
-  homeReceivedPurplePuzzleImage: {
-    position: 'absolute',
-    left: 43,
-    top: 34,
-    width: 74,
-    height: 74,
-  },
   homePuzzleLabel: {
     position: 'absolute',
     left: 14,
@@ -3395,18 +3453,6 @@ const styles = StyleSheet.create({
     top: 0,
     width: 135,
     height: 146,
-  },
-  homeSentFlowerImage: {
-    left: -9,
-    top: -8,
-    width: 144,
-    height: 163,
-  },
-  homeSentDogImage: {
-    left: -3,
-    top: 0,
-    width: 119,
-    height: 147,
   },
   homeSentEmpty: {
     position: 'absolute',
@@ -3544,6 +3590,69 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     fontWeight: '600',
     includeFontPadding: false,
+  },
+  confirmCard: {
+    position: 'absolute',
+    left: 29,
+    top: 340,
+    width: 332,
+    height: 244,
+    borderRadius: 10,
+    backgroundColor: '#fff',
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 8,
+  },
+  confirmTitle: {
+    position: 'absolute',
+    left: 7,
+    top: 32,
+    width: 318,
+    color: '#202020',
+    fontFamily: designSystem.font.display,
+    fontSize: 23,
+    lineHeight: 34,
+    fontWeight: '600',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  confirmMessage: {
+    position: 'absolute',
+    left: 16,
+    top: 76,
+    width: 300,
+    color: '#666',
+    fontFamily: designSystem.font.family,
+    fontSize: 15,
+    lineHeight: 21,
+    fontWeight: '500',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  confirmCancelButton: {
+    position: 'absolute',
+    left: 22,
+    top: 128,
+    width: 288,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#d9d9d9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmOkButton: {
+    position: 'absolute',
+    left: 22,
+    top: 180,
+    width: 288,
+    height: 44,
+    borderRadius: 8,
+    backgroundColor: '#2d3440',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   profileRoot: {
     position: 'absolute',
@@ -3839,10 +3948,32 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     includeFontPadding: false,
   },
-  puzzleBoxSolvedCard: {
+  puzzleBoxSolvedRow: {
     position: 'absolute',
-    left: 26,
-    top: 445,
+    left: 0,
+    right: 0,
+    top: 435,
+    height: 336,
+  },
+  puzzleBoxSolvedRowContent: {
+    paddingHorizontal: 26,
+    paddingVertical: 10,
+    gap: 16,
+  },
+  puzzleBoxSolvedEmptyText: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 520,
+    color: designSystem.color.muted,
+    fontFamily: designSystem.font.family,
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: '500',
+    textAlign: 'center',
+    includeFontPadding: false,
+  },
+  puzzleBoxSolvedCard: {
     width: 349,
     height: 316,
     borderRadius: 10,
@@ -3861,11 +3992,18 @@ const styles = StyleSheet.create({
     width: 349,
     height: 316,
   },
-  puzzleBoxSentGrid: {
+  puzzleBoxSentScroll: {
     position: 'absolute',
-    left: 29,
-    top: 184,
-    width: 337,
+    left: 0,
+    right: 0,
+    top: 170,
+    height: 600,
+  },
+  puzzleBoxSentGrid: {
+    paddingLeft: 29,
+    paddingRight: 24,
+    paddingTop: 14,
+    paddingBottom: 100,
     flexDirection: 'row',
     flexWrap: 'wrap',
     columnGap: 23,
@@ -3875,29 +4013,19 @@ const styles = StyleSheet.create({
     width: 157,
     height: 177,
   },
-  puzzleBoxSentFlowerImage: {
-    left: -9,
-    top: -8,
-    width: 144,
-    height: 163,
-  },
-  puzzleBoxSentFlowerImageLarge: {
-    left: -9,
-    top: -8,
-    width: 174,
-    height: 197,
-  },
-  puzzleBoxSentDogImage: {
-    left: -3,
-    top: 0,
-    width: 159,
-    height: 198,
-  },
-  puzzleBoxSentBeachImage: {
+  puzzleBoxSentPhotoImage: {
     left: 0,
-    top: -8,
+    top: 0,
     width: 157,
-    height: 231,
+    height: 177,
+  },
+  puzzleBoxSentEmpty: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 330,
+    height: 121,
+    alignItems: 'center',
   },
   puzzleBoxPublicBadge: {
     position: 'absolute',
@@ -4597,7 +4725,7 @@ const styles = StyleSheet.create({
     color: '#030303',
     fontSize: designSystem.font.hero,
     lineHeight: 40,
-    fontWeight: '900',
+    fontWeight: '700',
     textAlign: 'center',
     letterSpacing: 0,
   },
@@ -5121,7 +5249,7 @@ const styles = StyleSheet.create({
     color: '#030303',
     fontSize: designSystem.font.hero,
     lineHeight: 40,
-    fontWeight: '900',
+    fontWeight: '700',
     textAlign: 'center',
     letterSpacing: 0,
   },
@@ -5158,26 +5286,6 @@ const styles = StyleSheet.create({
     top: 0,
     width: 330,
     height: 330,
-  },
-  completedDrawingOverlay: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    width: 330,
-    height: 330,
-  },
-  completedTextSticker: {
-    position: 'absolute',
-    width: 140,
-    minHeight: 32,
-    zIndex: 5,
-    fontSize: 22,
-    lineHeight: 28,
-    fontWeight: '800',
-    textAlign: 'center',
-    textShadowColor: 'rgba(255,255,255,0.85)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
   },
   shareButton: {
     position: 'absolute',

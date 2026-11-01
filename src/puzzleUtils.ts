@@ -1,19 +1,5 @@
-import {
-  SHARE_PUZZLE_KEY,
-  SHARE_PUZZLE_PREFIX,
-  SHARE_PUZZLE_GRID_SIZE_KEY,
-  SHARE_PUZZLE_GRID_SIZE_PREFIX,
-  SHARE_PUZZLE_SOURCE_KEY,
-  SHARE_PUZZLE_SOURCE_PREFIX,
-  DrawStroke,
-  GridSize,
-  TextSticker,
-  WebCanvasContext,
-  WebCanvasDocument,
-  WebImageConstructor,
-  WebStorage,
-} from './types';
-import { solveSamplePieces } from './assets';
+import { BODY_FONT_FAMILY } from './fonts';
+import { DrawStroke, GridSize, TextSticker, WebCanvasContext, WebCanvasDocument, WebImageConstructor } from './types';
 
 export function createPuzzleImage(photoUri: string, gridSize: GridSize): Promise<string> {
   const webDocument = (globalThis as unknown as { document?: WebCanvasDocument }).document;
@@ -81,7 +67,8 @@ export function createPuzzleArtworkImage(photoUri: string, strokes: DrawStroke[]
       drawStrokes(context, strokes);
       drawTextStickers(context, textStickers);
 
-      resolve(canvas.toDataURL('image/png'));
+      // 이 이미지는 퍼즐함에 계속 쌓이므로 PNG 대신 JPEG로 용량을 줄인다.
+      resolve(canvas.toDataURL('image/jpeg', 0.9));
     };
     image.onerror = () => resolve(photoUri);
     image.src = photoUri;
@@ -153,7 +140,7 @@ export function createPuzzlePieces(photoUri: string, gridSize: GridSize = 3): Pr
 
       resolve(pieces);
     };
-    image.onerror = () => resolve(Array(pieceCount).fill(solveSamplePieces));
+    image.onerror = () => resolve(Array(pieceCount).fill(photoUri));
     image.src = photoUri;
   });
 }
@@ -212,10 +199,6 @@ export function createDrawingOverlay(strokes: DrawStroke[]) {
   return canvas.toDataURL('image/png');
 }
 
-export function createSharedPuzzleId() {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export function getShareUrl(puzzleId?: string) {
   const webLocation = (globalThis as unknown as { location?: { href?: string } }).location;
   const currentUrl = webLocation?.href ?? 'https://puzzlw.app';
@@ -242,93 +225,11 @@ export function getSharedPuzzleId() {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-export function saveStoredPuzzleUri(puzzleUri: string, puzzleId?: string, puzzleSourceUri?: string, gridSize: GridSize = 3) {
-  const storage = getStorage();
-  if (!storage) {
-    return;
-  }
-
-  const write = () => {
-    // 공유 링크가 읽는 값을 먼저 쓴다. 저장 용량이 모자라 중간에 끊겨도
-    // 링크로 들어온 사람이 선이 그려진 이미지를 원본 대신 받는 일이 없도록.
-    if (puzzleId) {
-      storage.setItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`, puzzleSourceUri ?? puzzleUri);
-      storage.setItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`, puzzleUri);
-      storage.setItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`, String(gridSize));
-    }
-    storage.setItem(SHARE_PUZZLE_SOURCE_KEY, puzzleSourceUri ?? puzzleUri);
-    storage.setItem(SHARE_PUZZLE_KEY, puzzleUri);
-    storage.setItem(SHARE_PUZZLE_GRID_SIZE_KEY, String(gridSize));
-  };
-
-  try {
-    write();
-  } catch {
-    // 퍼즐 이미지가 data URL이라 몇 개만 쌓여도 용량이 찬다.
-    // 예전에 만든 퍼즐을 비우고 한 번만 다시 시도한다.
-    try {
-      clearStoredPuzzles(storage, puzzleId);
-      write();
-    } catch {
-      // 그래도 안 되면 저장을 포기한다 (공유 링크는 샘플 퍼즐로 열린다).
-    }
-  }
-}
-
-function clearStoredPuzzles(storage: WebStorage, keepPuzzleId?: string) {
-  const keptKeys = keepPuzzleId
-    ? [
-        `${SHARE_PUZZLE_PREFIX}${keepPuzzleId}`,
-        `${SHARE_PUZZLE_SOURCE_PREFIX}${keepPuzzleId}`,
-        `${SHARE_PUZZLE_GRID_SIZE_PREFIX}${keepPuzzleId}`,
-      ]
-    : [];
-  const staleKeys: string[] = [];
-
-  for (let index = 0; index < storage.length; index += 1) {
-    const key = storage.key(index);
-    if (key?.startsWith('puzzlw:shared') && !keptKeys.includes(key)) {
-      staleKeys.push(key);
-    }
-  }
-
-  staleKeys.forEach((key) => storage.removeItem(key));
-}
-
-export function getStoredPuzzleGridSize(puzzleId?: string | null): GridSize {
-  try {
-    const storage = getStorage();
-    const storedValue = puzzleId
-      ? storage?.getItem(`${SHARE_PUZZLE_GRID_SIZE_PREFIX}${puzzleId}`)
-      : storage?.getItem(SHARE_PUZZLE_GRID_SIZE_KEY);
-    return parseGridSize(storedValue);
-  } catch {
-    return 3;
-  }
-}
-
-export function getStoredPuzzleSourceUri(puzzleId?: string | null) {
-  try {
-    const storage = getStorage();
-    if (puzzleId) {
-      return storage?.getItem(`${SHARE_PUZZLE_SOURCE_PREFIX}${puzzleId}`) ?? null;
-    }
-    return storage?.getItem(SHARE_PUZZLE_SOURCE_KEY) ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function getStoredPuzzleUri(puzzleId?: string | null) {
-  try {
-    const storage = getStorage();
-    if (puzzleId) {
-      return storage?.getItem(`${SHARE_PUZZLE_PREFIX}${puzzleId}`) ?? null;
-    }
-    return storage?.getItem(SHARE_PUZZLE_KEY) ?? null;
-  } catch {
-    return null;
-  }
+export function getSharedProfileSlug() {
+  const webLocation = (globalThis as unknown as { location?: { search?: string } }).location;
+  const search = webLocation?.search ?? '';
+  const match = search.match(/[?&]user=([^&]+)/);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 export function widthFromSlider(locationX: number) {
@@ -338,10 +239,6 @@ export function widthFromSlider(locationX: number) {
 
 export function sliderOffsetFromWidth(width: number) {
   return ((width - 1) / 8) * 242;
-}
-
-function getStorage() {
-  return (globalThis as unknown as { localStorage?: WebStorage }).localStorage;
 }
 
 function drawCroppedImage(context: WebCanvasContext, image: Parameters<WebCanvasContext['drawImage']>[0], naturalWidth: number, naturalHeight: number, canvasSize: number) {
@@ -384,19 +281,49 @@ function drawStroke(context: WebCanvasContext, stroke: DrawStroke, firstPoint: D
   }
 }
 
+// 꾸미기 화면의 글씨(puzzleTextSticker 스타일)와 똑같이 보이도록 그린다:
+// 너비 140 상자 가운데 정렬, 22px 굵은 글씨, 줄 높이 28, 흰 그림자.
+const TEXT_STICKER_BOX_WIDTH = 140;
+const TEXT_STICKER_LINE_HEIGHT = 28;
+
 function drawTextStickers(context: WebCanvasContext, textStickers: TextSticker[]) {
-  context.font = '700 19px sans-serif';
-  context.textAlign = 'left';
+  context.save();
+  context.font = `800 22px ${BODY_FONT_FAMILY}`;
+  context.textAlign = 'center';
   context.textBaseline = 'middle';
+  context.shadowColor = 'rgba(255,255,255,0.85)';
+  context.shadowBlur = 2;
+  context.shadowOffsetX = 0;
+  context.shadowOffsetY = 1;
 
   textStickers.forEach((sticker) => {
+    const lines = wrapStickerText(context, sticker.text);
+    const firstLineY = sticker.y - 16 + TEXT_STICKER_LINE_HEIGHT / 2;
     context.fillStyle = sticker.color;
-    context.fillText(sticker.text, sticker.x - 70, sticker.y);
+    lines.forEach((line, index) => {
+      context.fillText(line, sticker.x, firstLineY + index * TEXT_STICKER_LINE_HEIGHT);
+    });
   });
+
+  context.restore();
 }
 
-function parseGridSize(value?: string | null): GridSize {
-  return value === '4' || value === '5' ? Number(value) as GridSize : 3;
+function wrapStickerText(context: WebCanvasContext, text: string) {
+  return text.split('\n').flatMap((paragraph) => {
+    const lines: string[] = [];
+    let line = '';
+    Array.from(paragraph).forEach((char) => {
+      const nextLine = line + char;
+      if (line.length > 0 && context.measureText(nextLine).width > TEXT_STICKER_BOX_WIDTH) {
+        lines.push(line);
+        line = char.trimStart();
+        return;
+      }
+      line = nextLine;
+    });
+    lines.push(line);
+    return lines;
+  });
 }
 
 export function getPuzzlePieceMargin(cellSize: number) {
