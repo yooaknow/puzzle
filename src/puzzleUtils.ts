@@ -201,14 +201,14 @@ export function createDrawingOverlay(strokes: DrawStroke[]) {
 
 export function getShareUrl(puzzleId?: string) {
   const webLocation = (globalThis as unknown as { location?: { href?: string } }).location;
-  const currentUrl = webLocation?.href ?? 'https://puzzlw.app';
+  const currentUrl = webLocation?.href ?? 'https://puzzle-theta-nine.vercel.app';
   const baseUrl = currentUrl.split('?')[0].split('#')[0];
   return puzzleId ? `${baseUrl}?shared=1&puzzleId=${encodeURIComponent(puzzleId)}` : `${baseUrl}?shared=1`;
 }
 
 export function getProfileShareUrl(profileSlug: string) {
   const webLocation = (globalThis as unknown as { location?: { href?: string } }).location;
-  const currentUrl = webLocation?.href ?? 'https://puzzlw.app';
+  const currentUrl = webLocation?.href ?? 'https://puzzle-theta-nine.vercel.app';
   const baseUrl = currentUrl.split('?')[0].split('#')[0];
   return `${baseUrl}?shared=1&user=${encodeURIComponent(profileSlug)}`;
 }

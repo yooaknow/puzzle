@@ -5,7 +5,7 @@ const PRETENDARD_CSS_URL =
   'https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css';
 const A2Z_MEDIUM_URL =
   'https://cdn.jsdelivr.net/gh/projectnoonnu/2601-6@1.0/%EC%97%90%EC%9D%B4%ED%88%AC%EC%A7%80%EC%B2%B4-5Medium.woff2';
-const FONT_STYLE_ID = 'puzzlw-web-fonts';
+const FONT_STYLE_ID = 'puzzle-web-fonts';
 
 const FONT_CSS = `@import url('${PRETENDARD_CSS_URL}');
 
