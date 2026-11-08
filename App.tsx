@@ -75,6 +75,7 @@ import {
   restoreAccount,
   signOut,
 } from './src/authStore';
+import { startAnalytics } from './src/analytics';
 import { clearLegacyLocalData } from './src/browserStorage';
 import { BODY_FONT_FAMILY, DISPLAY_FONT_FAMILY, loadWebFonts } from './src/fonts';
 import {
@@ -278,6 +279,7 @@ export default function App() {
   useEffect(() => {
     loadWebFonts();
     clearLegacyLocalData();
+    startAnalytics();
 
     // 기억해 둔 계정으로 먼저 그리고, 서버 세션으로 다시 확인한다.
     let isActive = true;
