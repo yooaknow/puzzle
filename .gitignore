@@ -5,3 +5,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .DS_Store
+
+# 로컬 환경 변수 (Supabase 키)
+.env
+.env*.local
