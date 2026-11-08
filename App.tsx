@@ -688,13 +688,14 @@ async function shareLink({ title, text, url }: { title: string; text: string; ur
   return false;
 }
 
-// 카톡 같은 메신저에 링크와 함께 붙는 문구. 받는 사람이 눌러보고 싶게 쓴다.
-function getPuzzleShareText(senderName: string | null) {
-  return `${senderName ? `${senderName}님이` : '누군가'} 당신에게 퍼즐을 보냈어요 🧩\n조각을 다 맞추면 숨겨둔 메시지가 보여요.`;
+// 카톡 같은 메신저에 링크와 함께 붙는 문구. 보내는 사람 이름으로 올라가니 친구에게 직접 말하듯 쓴다.
+// 링크 미리보기(og 태그)는 scripts/make-share-pages.mjs에서 링크 종류별로 따로 만든다.
+function getPuzzleShareText() {
+  return '야 ㅋㅋ 이거 풀어봐 🧩\n조각 다 맞춰야 내가 숨겨둔 말이 보여';
 }
 
-function getProfileShareText(name: string) {
-  return `${name}님에게 하고 싶은 말, 퍼즐로 보내주세요 🧩\n조각을 다 맞춰야 보이는 메시지를 만들 수 있어요.`;
+function getProfileShareText() {
+  return '나한테 하고 싶은 말 있으면 퍼즐로 보내줘 🧩\n사진 한 장이면 되고 로그인도 필요 없어';
 }
 
 async function copyText(text: string) {
@@ -934,7 +935,7 @@ function LinkCreatedScreen({ account, onBack, onDone }: { account: AuthAccount; 
   const shareProfileLink = async () => {
     const shared = await shareLink({
       title: '푸러봐',
-      text: getProfileShareText(account.name),
+      text: getProfileShareText(),
       url: getProfileShareUrl(account.slug),
     });
     if (shared) {
@@ -1220,7 +1221,7 @@ function HomeScreen({
   }));
 
   const shareProfileLink = () =>
-    shareLink({ title: '푸러봐', text: getProfileShareText(account.name), url: getProfileShareUrl(account.slug) });
+    shareLink({ title: '푸러봐', text: getProfileShareText(), url: getProfileShareUrl(account.slug) });
 
   return (
     <View style={styles.homeRoot}>
@@ -2063,7 +2064,7 @@ function PuzzleCompleteScreen({
   }, [puzzle.sourceUri, puzzle.gridSize]);
 
   const sharePuzzle = () =>
-    shareLink({ title: '푸러봐', text: getPuzzleShareText(puzzle.senderName), url: getShareUrl(puzzle.id) });
+    shareLink({ title: '푸러봐', text: getPuzzleShareText(), url: getShareUrl(puzzle.id) });
 
   return (
     <View style={styles.fill}>
