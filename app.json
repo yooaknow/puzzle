@@ -12,8 +12,7 @@
       "bundler": "metro",
       "name": "푸러봐",
       "shortName": "푸러봐",
-      "lang": "ko",
-      "description": "하고 싶은 말을 퍼즐로 보내보세요."
+      "lang": "ko"
     }
   }
 }

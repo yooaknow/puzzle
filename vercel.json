@@ -2,6 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
   "installCommand": "npm ci",
-  "buildCommand": "npx expo export -p web",
-  "outputDirectory": "dist"
+  "buildCommand": "npx expo export -p web && node scripts/make-share-pages.mjs",
+  "outputDirectory": "dist",
+  "rewrites": [
+    { "source": "/", "has": [{ "type": "query", "key": "puzzleId" }], "destination": "/share/puzzle.html" },
+    { "source": "/", "has": [{ "type": "query", "key": "user" }], "destination": "/share/profile.html" },
+    { "source": "/", "destination": "/app.html" }
+  ]
 }
