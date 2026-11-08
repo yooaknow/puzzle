@@ -667,12 +667,22 @@ async function shareLink({ title, text, url }: { title: string; text: string; ur
     }
   }
 
-  if (await copyText(url)) {
+  // 공유 창이 없는 브라우저에서는 문구까지 같이 복사해서, 붙여넣기만 해도 같은 메시지가 가게 한다.
+  if (await copyText(`${text}\n${url}`)) {
     showToast('링크를 복사했어요. 친구에게 붙여넣어 보내주세요.');
     return true;
   }
   showToast('이 브라우저에서는 링크를 공유할 수 없어요.');
   return false;
+}
+
+// 카톡 같은 메신저에 링크와 함께 붙는 문구. 받는 사람이 눌러보고 싶게 쓴다.
+function getPuzzleShareText(senderName: string | null) {
+  return `${senderName ? `${senderName}님이` : '누군가'} 당신에게 퍼즐을 보냈어요 🧩\n조각을 다 맞추면 숨겨둔 메시지가 보여요.`;
+}
+
+function getProfileShareText(name: string) {
+  return `${name}님에게 하고 싶은 말, 퍼즐로 보내주세요 🧩\n조각을 다 맞춰야 보이는 메시지를 만들 수 있어요.`;
 }
 
 async function copyText(text: string) {
@@ -911,8 +921,8 @@ function SharedPublicPuzzleModal({
 function LinkCreatedScreen({ account, onBack, onDone }: { account: AuthAccount; onBack: () => void; onDone: () => void }) {
   const shareProfileLink = async () => {
     const shared = await shareLink({
-      title: '푸러봐 링크',
-      text: `${account.name}님에게 퍼즐을 보내주세요!`,
+      title: '푸러봐',
+      text: getProfileShareText(account.name),
       url: getProfileShareUrl(account.slug),
     });
     if (shared) {
@@ -1198,7 +1208,7 @@ function HomeScreen({
   }));
 
   const shareProfileLink = () =>
-    shareLink({ title: '내 푸러봐 링크', text: '퍼즐로 마음을 보내주세요.', url: getProfileShareUrl(account.slug) });
+    shareLink({ title: '푸러봐', text: getProfileShareText(account.name), url: getProfileShareUrl(account.slug) });
 
   return (
     <View style={styles.homeRoot}>
@@ -2041,7 +2051,7 @@ function PuzzleCompleteScreen({
   }, [puzzle.sourceUri, puzzle.gridSize]);
 
   const sharePuzzle = () =>
-    shareLink({ title: '퍼즐이 완성됐어요!', text: '내가 만든 퍼즐을 확인해보세요.', url: getShareUrl(puzzle.id) });
+    shareLink({ title: '푸러봐', text: getPuzzleShareText(puzzle.senderName), url: getShareUrl(puzzle.id) });
 
   return (
     <View style={styles.fill}>
