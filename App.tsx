@@ -616,7 +616,8 @@ export default function App() {
                   }
                   setScreen('card');
                 }}
-                onCreatePuzzle={createPuzzle}
+                // 받은 퍼즐을 다 맞춘 사람이 "나도 만들어줄게"를 누르면 사진 고르기 대신 푸러봐 첫 화면부터 보여준다.
+                onCreatePuzzle={() => setScreen(currentAccount ? 'card' : 'splash')}
               />
             )}
           </View>
@@ -2386,7 +2387,7 @@ function SolvedPuzzleCompleteScreen({
 
       <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.solvedLoginNotice, pressed && styles.pressed]}>
         <Text style={styles.solvedLoginNoticeTitle}>나도 널 위해서 만들어줄게!</Text>
-        <Text style={styles.solvedLoginNoticeBody}>나만의 퍼즐을 만들어 선물해보세요.</Text>
+        <Text style={styles.solvedLoginNoticeBody}>로그인 없이 나만의 퍼즐을 만들어보세요.</Text>
         <Image source={loginPuzzleAsset} style={styles.solvedLoginNoticeImage} resizeMode="cover" />
       </Pressable>
     </View>
