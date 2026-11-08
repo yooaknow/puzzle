@@ -181,8 +181,20 @@ export default function App() {
   const { width, height } = useWindowDimensions();
   const [viewportSize, setViewportSize] = useState({ width, height });
   const scale = getResponsiveScale(viewportSize.width, viewportSize.height);
-  const screenOffsetX = Math.max(0, (viewportSize.width - DESIGN_WIDTH * scale) / 2);
-  const screenOffsetY = Math.max(0, (viewportSize.height - DESIGN_HEIGHT * scale) / 2);
+  const screenViewportRef = useRef<View>(null);
+  // 디자인 좌표 (0,0)이 지금 화면 어디에 있는지. 세로로 스크롤된 만큼도 반영돼야 퍼즐 조각을 끌어 놓을 자리가 맞는다.
+  const getScreenOrigin = useCallback(() => {
+    const node = screenViewportRef.current as unknown as { getBoundingClientRect?: () => { left: number; top: number } } | null;
+    const rect = node?.getBoundingClientRect?.();
+    const webWindow = globalThis as unknown as { scrollX?: number; scrollY?: number };
+    if (rect) {
+      return { x: rect.left + (webWindow.scrollX ?? 0), y: rect.top + (webWindow.scrollY ?? 0) };
+    }
+    return {
+      x: Math.max(0, (viewportSize.width - DESIGN_WIDTH * scale) / 2),
+      y: Math.max(0, (viewportSize.height - DESIGN_HEIGHT * scale) / 2),
+    };
+  }, [viewportSize, scale]);
 
   const [receivedPuzzles, setReceivedPuzzles] = useState<ReceivedPuzzle[]>([]);
   const [sentPuzzles, setSentPuzzles] = useState<PuzzleRecord[]>([]);
@@ -433,7 +445,7 @@ export default function App() {
     <SafeAreaView style={styles.root} onLayout={handleRootLayout}>
       <StatusBar style="dark" backgroundColor="#fff" />
       <ScrollView style={styles.rootScroll} contentContainerStyle={styles.rootScrollContent} showsVerticalScrollIndicator={false}>
-        <View style={[styles.screenViewport, { width: DESIGN_WIDTH * scale, height: DESIGN_HEIGHT * scale }]}>
+        <View ref={screenViewportRef} style={[styles.screenViewport, { width: DESIGN_WIDTH * scale, height: DESIGN_HEIGHT * scale }]}>
           <View style={[styles.screen, { transform: [{ scale }], transformOrigin: 'top left' }]}>
             {screen === 'splash' && (
               <SplashScreen
@@ -574,8 +586,7 @@ export default function App() {
                 puzzleSourceUri={solveTarget.sourceUri}
                 gridSize={solveTarget.gridSize}
                 screenScale={scale}
-                screenOffsetX={screenOffsetX}
-                screenOffsetY={screenOffsetY}
+                getScreenOrigin={getScreenOrigin}
                 onBack={goBack}
                 onComplete={() => {
                   if (currentAccount && solveTarget.puzzleId) {
@@ -605,7 +616,8 @@ export default function App() {
                   }
                   setScreen('card');
                 }}
-                onCreatePuzzle={createPuzzle}
+                // 받은 퍼즐을 다 맞춘 사람이 "나도 만들어줄게"를 누르면 사진 고르기 대신 푸러봐 첫 화면부터 보여준다.
+                onCreatePuzzle={() => setScreen(currentAccount ? 'card' : 'splash')}
               />
             )}
           </View>
@@ -667,12 +679,22 @@ async function shareLink({ title, text, url }: { title: string; text: string; ur
     }
   }
 
-  if (await copyText(url)) {
+  // 공유 창이 없는 브라우저에서는 문구까지 같이 복사해서, 붙여넣기만 해도 같은 메시지가 가게 한다.
+  if (await copyText(`${text}\n${url}`)) {
     showToast('링크를 복사했어요. 친구에게 붙여넣어 보내주세요.');
     return true;
   }
   showToast('이 브라우저에서는 링크를 공유할 수 없어요.');
   return false;
+}
+
+// 카톡 같은 메신저에 링크와 함께 붙는 문구. 받는 사람이 눌러보고 싶게 쓴다.
+function getPuzzleShareText(senderName: string | null) {
+  return `${senderName ? `${senderName}님이` : '누군가'} 당신에게 퍼즐을 보냈어요 🧩\n조각을 다 맞추면 숨겨둔 메시지가 보여요.`;
+}
+
+function getProfileShareText(name: string) {
+  return `${name}님에게 하고 싶은 말, 퍼즐로 보내주세요 🧩\n조각을 다 맞춰야 보이는 메시지를 만들 수 있어요.`;
 }
 
 async function copyText(text: string) {
@@ -911,8 +933,8 @@ function SharedPublicPuzzleModal({
 function LinkCreatedScreen({ account, onBack, onDone }: { account: AuthAccount; onBack: () => void; onDone: () => void }) {
   const shareProfileLink = async () => {
     const shared = await shareLink({
-      title: '푸러봐 링크',
-      text: `${account.name}님에게 퍼즐을 보내주세요!`,
+      title: '푸러봐',
+      text: getProfileShareText(account.name),
       url: getProfileShareUrl(account.slug),
     });
     if (shared) {
@@ -1198,7 +1220,7 @@ function HomeScreen({
   }));
 
   const shareProfileLink = () =>
-    shareLink({ title: '내 푸러봐 링크', text: '퍼즐로 마음을 보내주세요.', url: getProfileShareUrl(account.slug) });
+    shareLink({ title: '푸러봐', text: getProfileShareText(account.name), url: getProfileShareUrl(account.slug) });
 
   return (
     <View style={styles.homeRoot}>
@@ -1856,7 +1878,7 @@ function PuzzleDecorateScreen({
           </Text>
         ))}
         <View
-          style={[styles.drawingHitArea, tool === 'text' && styles.textHitArea]}
+          style={[styles.drawingHitArea, NO_TOUCH_SCROLL, tool === 'text' && styles.textHitArea]}
           onStartShouldSetResponder={() => tool === 'draw' || (tool === 'text' && activeTextId !== null)}
           onMoveShouldSetResponder={() => tool === 'draw' || (tool === 'text' && activeTextId !== null)}
           onResponderGrant={tool === 'draw' ? startDrawing : moveActiveText}
@@ -2041,7 +2063,7 @@ function PuzzleCompleteScreen({
   }, [puzzle.sourceUri, puzzle.gridSize]);
 
   const sharePuzzle = () =>
-    shareLink({ title: '퍼즐이 완성됐어요!', text: '내가 만든 퍼즐을 확인해보세요.', url: getShareUrl(puzzle.id) });
+    shareLink({ title: '푸러봐', text: getPuzzleShareText(puzzle.senderName), url: getShareUrl(puzzle.id) });
 
   return (
     <View style={styles.fill}>
@@ -2074,16 +2096,14 @@ function PuzzleSolveScreen({
   puzzleSourceUri,
   gridSize,
   screenScale,
-  screenOffsetX,
-  screenOffsetY,
+  getScreenOrigin,
   onBack,
   onComplete,
 }: {
   puzzleSourceUri: string;
   gridSize: GridSize;
   screenScale: number;
-  screenOffsetX: number;
-  screenOffsetY: number;
+  getScreenOrigin: () => { x: number; y: number };
   onBack: () => void;
   onComplete: () => void;
 }) {
@@ -2140,9 +2160,10 @@ function PuzzleSolveScreen({
 
   const getDesignPoint = (event: GestureResponderEvent) => {
     const { pageX, pageY } = event.nativeEvent;
+    const origin = getScreenOrigin();
     return {
-      x: (pageX - screenOffsetX) / screenScale,
-      y: (pageY - screenOffsetY) / screenScale,
+      x: (pageX - origin.x) / screenScale,
+      y: (pageY - origin.y) / screenScale,
     };
   };
 
@@ -2254,7 +2275,7 @@ function PuzzleSolveScreen({
                   draggingPieceRef.current = null;
                   setDraggingPiece(null);
                 }}
-                style={[styles.solvePieceButton, trayPieceStyle, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
+                style={[styles.solvePieceButton, trayPieceStyle, NO_TOUCH_SCROLL, selectedPiece === pieceIndex && styles.selectedSolvePiece]}
               >
                 {pieceUris[pieceIndex] ? (
                   <Image source={{ uri: pieceUris[pieceIndex] }} style={styles.solvePieceImage} resizeMode="cover" />
@@ -2366,7 +2387,7 @@ function SolvedPuzzleCompleteScreen({
 
       <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.solvedLoginNotice, pressed && styles.pressed]}>
         <Text style={styles.solvedLoginNoticeTitle}>나도 널 위해서 만들어줄게!</Text>
-        <Text style={styles.solvedLoginNoticeBody}>나만의 퍼즐을 만들어 선물해보세요.</Text>
+        <Text style={styles.solvedLoginNoticeBody}>로그인 없이 나만의 퍼즐을 만들어보세요.</Text>
         <Image source={loginPuzzleAsset} style={styles.solvedLoginNoticeImage} resizeMode="cover" />
       </Pressable>
     </View>
@@ -2401,7 +2422,7 @@ function DrawPanel({
       </View>
       <Text style={styles.sliderLabel}>펜 굵기</Text>
       <View
-        style={styles.sliderTouchArea}
+        style={[styles.sliderTouchArea, NO_TOUCH_SCROLL]}
         onStartShouldSetResponder={() => true}
         onResponderGrant={(event) => onWidthChange(getSliderWidth(event.nativeEvent.locationX))}
         onResponderMove={(event) => onWidthChange(getSliderWidth(event.nativeEvent.locationX))}
@@ -2527,14 +2548,21 @@ const designSystem = {
   },
 } as const;
 
+const PHONE_MAX_WIDTH = 500;
+
+// 화면이 세로로 스크롤되는 폰에서, 조각 끌기·그림 그리기·굵기 조절을 할 때 페이지가 같이 움직이지 않게 한다. (웹 전용 스타일)
+const NO_TOUCH_SCROLL = { touchAction: 'none' } as unknown as ViewStyle;
+
 function getResponsiveScale(width: number, height: number) {
   const widthScale = width / designSystem.size.screenWidth;
   const heightScale = height / designSystem.size.screenHeight;
 
-  // 폰처럼 좁은 화면에서는 가로를 꽉 채우고 모자란 세로는 스크롤로 넘긴다.
+  // 폰에서는 가로를 꽉 채우고 모자란 세로는 스크롤로 넘긴다.
   // (높이에 맞추면 브라우저 주소창 높이만큼 화면 전체가 줄어들어 양옆에 여백이 생긴다)
-  // 넓은 화면에서는 기기 한 대가 통째로 보이도록 높이에 맞춘다.
-  return widthScale <= 1 ? widthScale : Math.min(widthScale, heightScale);
+  // 디자인(390)보다 조금 넓은 폰(아이폰 17 402, 갤럭시 412, 프로맥스 440)도 폰으로 본다.
+  // 카톡 안 브라우저처럼 위아래 막대가 화면을 줄이는 곳에서 특히 양옆이 크게 비었다.
+  // 태블릿·PC처럼 넓은 화면에서만 기기 한 대가 통째로 보이도록 높이에 맞춘다.
+  return width <= PHONE_MAX_WIDTH ? widthScale : Math.min(widthScale, heightScale);
 }
 
 // 피그마 화면(402x874)은 맨 위에 폰이 직접 그리는 상태바 자리를 비워두고 있다.
