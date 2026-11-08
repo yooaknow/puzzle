@@ -67,17 +67,20 @@ import {
   AuthAccount,
   AuthCredentials,
   authenticateAccount,
-  clearAuthSession,
-  deleteAuthAccount,
-  findAccountBySlug,
+  deleteAccount,
+  findProfileBySlug,
+  getCachedAccount,
   getDisplayNameFromSlug,
-  getStoredAuthSession,
+  PublicProfile,
+  restoreAccount,
+  signOut,
 } from './src/authStore';
+import { clearLegacyLocalData } from './src/browserStorage';
 import { BODY_FONT_FAMILY, DISPLAY_FONT_FAMILY, loadWebFonts } from './src/fonts';
 import {
   claimSentPuzzle,
-  deletePuzzleDataFor,
   getPuzzle,
+  listProfilePuzzles,
   listReceivedPuzzles,
   listSentPuzzles,
   markPuzzleSolved,
@@ -169,7 +172,7 @@ export default function App() {
   const [draftRecipientSlug, setDraftRecipientSlug] = useState<string | null>(null);
   const [completedPuzzle, setCompletedPuzzle] = useState<PuzzleRecord | null>(null);
   const [solveTarget, setSolveTarget] = useState<SolveTarget>(PRACTICE_SOLVE_TARGET);
-  const [currentAccount, setCurrentAccount] = useState<AuthAccount | null>(() => getStoredAuthSession());
+  const [currentAccount, setCurrentAccount] = useState<AuthAccount | null>(() => getCachedAccount());
   const [pendingAuthAction, setPendingAuthAction] = useState<PendingAuthAction | null>(null);
   const [puzzleBoxTab, setPuzzleBoxTab] = useState<'received' | 'sent'>('received');
   const [dismissedNoticePuzzleId, setDismissedNoticePuzzleId] = useState<string | null>(null);
@@ -181,20 +184,68 @@ export default function App() {
   const screenOffsetX = Math.max(0, (viewportSize.width - DESIGN_WIDTH * scale) / 2);
   const screenOffsetY = Math.max(0, (viewportSize.height - DESIGN_HEIGHT * scale) / 2);
 
-  // 저장소가 바뀔 때마다 libraryVersion을 올려서 목록을 다시 읽는다.
-  const receivedPuzzles = useMemo(
-    () => (currentAccount ? listReceivedPuzzles(currentAccount) : []),
-    [currentAccount, libraryVersion],
-  );
-  const sentPuzzles = useMemo(() => (currentAccount ? listSentPuzzles(currentAccount.email) : []), [currentAccount, libraryVersion]);
+  const [receivedPuzzles, setReceivedPuzzles] = useState<ReceivedPuzzle[]>([]);
+  const [sentPuzzles, setSentPuzzles] = useState<PuzzleRecord[]>([]);
+  const [sharedProfile, setSharedProfile] = useState<PublicProfile | null>(null);
+  const [sharedProfilePuzzles, setSharedProfilePuzzles] = useState<ReceivedPuzzle[]>([]);
+  const currentAccountId = currentAccount?.id ?? null;
   const noticePuzzle = receivedPuzzles.find((puzzle) => puzzle.solvedAt === null && puzzle.id !== dismissedNoticePuzzleId) ?? null;
-  const sharedProfileAccount = useMemo(() => (sharedProfileSlug ? findAccountBySlug(sharedProfileSlug) : null), [sharedProfileSlug, libraryVersion]);
-  const sharedProfileName = sharedProfileAccount?.name ?? (sharedProfileSlug ? getDisplayNameFromSlug(sharedProfileSlug) : '친구');
-  const sharedProfilePuzzles = useMemo(
-    () => (sharedProfileAccount ? listReceivedPuzzles(sharedProfileAccount).filter((puzzle) => puzzle.solvedAt !== null) : []),
-    [sharedProfileAccount, libraryVersion],
-  );
+  const sharedProfileName = sharedProfile?.name ?? (sharedProfileSlug ? getDisplayNameFromSlug(sharedProfileSlug) : '친구');
   const refreshLibrary = () => setLibraryVersion((current) => current + 1);
+
+  // 서버 데이터가 바뀔 만한 일을 하고 나면 libraryVersion을 올려서 목록을 다시 받아온다.
+  useEffect(() => {
+    if (!currentAccountId) {
+      setReceivedPuzzles([]);
+      setSentPuzzles([]);
+      return;
+    }
+
+    let isActive = true;
+    Promise.all([listReceivedPuzzles(), listSentPuzzles()])
+      .then(([received, sent]) => {
+        if (isActive) {
+          setReceivedPuzzles(received);
+          setSentPuzzles(sent);
+        }
+      })
+      .catch(() => {
+        if (isActive) {
+          showToast('퍼즐함을 불러오지 못했어요. 인터넷 연결을 확인해주세요.');
+        }
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [currentAccountId, libraryVersion]);
+
+  useEffect(() => {
+    if (!sharedProfileSlug) {
+      return;
+    }
+
+    let isActive = true;
+    Promise.all([findProfileBySlug(sharedProfileSlug), listProfilePuzzles(sharedProfileSlug)])
+      .then(([profile, puzzles]) => {
+        if (isActive) {
+          setSharedProfile(profile);
+          setSharedProfilePuzzles(puzzles);
+        }
+      })
+      .catch(() => {
+        // 이름은 링크에서 되살린 값으로 보여주고, 공개 퍼즐만 비워둔다.
+      });
+    return () => {
+      isActive = false;
+    };
+  }, [sharedProfileSlug, libraryVersion]);
+
+  // 다른 사람이 보낸 퍼즐이 들어왔을 수 있으니 홈이나 퍼즐함으로 올 때마다 다시 받아온다.
+  useEffect(() => {
+    if (screen === 'card' || screen === 'puzzleBox') {
+      refreshLibrary();
+    }
+  }, [screen]);
 
   const handleRootLayout = useCallback((event: LayoutChangeEvent) => {
     const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
@@ -208,15 +259,31 @@ export default function App() {
 
   useEffect(() => {
     loadWebFonts();
+    clearLegacyLocalData();
+
+    // 기억해 둔 계정으로 먼저 그리고, 서버 세션으로 다시 확인한다.
+    let isActive = true;
+    restoreAccount().then((account) => {
+      // undefined면 서버에 못 닿은 것이라 지금 계정을 그대로 둔다.
+      if (isActive && account !== undefined) {
+        setCurrentAccount(account);
+      }
+    });
+    return () => {
+      isActive = false;
+    };
   }, []);
 
   // 로그인한 채로 공유 링크를 열면 그 퍼즐을 받은 퍼즐에 담아둔다.
   useEffect(() => {
-    if (currentAccount && sharedPuzzleId) {
-      receivePuzzle(currentAccount.email, sharedPuzzleId);
-      refreshLibrary();
+    if (currentAccountId && sharedPuzzleId) {
+      receivePuzzle(sharedPuzzleId)
+        .then(refreshLibrary)
+        .catch(() => {
+          // 퍼즐을 여는 데는 문제가 없으니 조용히 넘어간다. 다 맞추면 다시 담긴다.
+        });
     }
-  }, [currentAccount, sharedPuzzleId]);
+  }, [currentAccountId, sharedPuzzleId]);
 
   useEffect(() => {
     return () => {
@@ -242,29 +309,33 @@ export default function App() {
     navigate('login');
   };
 
-  const handleAuthSubmit = (credentials: AuthCredentials) => {
-    const result = authenticateAccount(credentials);
+  const handleAuthSubmit = async (credentials: AuthCredentials) => {
+    const result = await authenticateAccount(credentials);
     if (!result.account) {
       return result.error;
     }
 
     const account = result.account;
     let nextScreen: ScreenName = credentials.mode === 'signup' ? 'linkCreated' : 'card';
-    if (sharedPuzzleId) {
-      receivePuzzle(account.email, sharedPuzzleId);
-    }
-    if (pendingAuthAction) {
-      if (pendingAuthAction.type === 'claimSent') {
-        claimSentPuzzle(pendingAuthAction.puzzleId, account);
-        setPuzzleBoxTab('sent');
-      } else {
-        markPuzzleSolved(account.email, pendingAuthAction.puzzleId);
-        setPuzzleBoxTab('received');
+    try {
+      if (sharedPuzzleId) {
+        await receivePuzzle(sharedPuzzleId);
       }
-      if (credentials.mode === 'login') {
-        nextScreen = 'puzzleBox';
+      if (pendingAuthAction) {
+        if (pendingAuthAction.type === 'claimSent') {
+          await claimSentPuzzle(pendingAuthAction.puzzleId);
+          setPuzzleBoxTab('sent');
+        } else {
+          await markPuzzleSolved(pendingAuthAction.puzzleId);
+          setPuzzleBoxTab('received');
+        }
+        if (credentials.mode === 'login') {
+          nextScreen = 'puzzleBox';
+        }
+        setPendingAuthAction(null);
       }
-      setPendingAuthAction(null);
+    } catch {
+      showToast('퍼즐을 퍼즐함에 담지 못했어요. 잠시 후 다시 시도해주세요.');
     }
 
     setCurrentAccount(account);
@@ -273,19 +344,23 @@ export default function App() {
     return null;
   };
 
-  const handleLogout = () => {
-    clearAuthSession();
+  const handleLogout = async () => {
+    await signOut();
     setCurrentAccount(null);
     setScreen('splash');
     showToast('로그아웃했어요.');
   };
 
-  const handleDeleteAccount = () => {
+  const handleDeleteAccount = async () => {
     if (!currentAccount) {
       return;
     }
-    deletePuzzleDataFor(currentAccount.email);
-    deleteAuthAccount(currentAccount.email);
+    try {
+      await deleteAccount();
+    } catch {
+      showToast('탈퇴하지 못했어요. 잠시 후 다시 시도해주세요.');
+      return;
+    }
     setCurrentAccount(null);
     refreshLibrary();
     setScreen('splash');
@@ -330,11 +405,16 @@ export default function App() {
     navigate('solve');
   };
 
-  const openSharedPuzzle = () => {
-    const puzzle = sharedPuzzleId ? getPuzzle(sharedPuzzleId) : null;
-    if (!puzzle) {
-      // 퍼즐은 만든 브라우저에만 저장된다. 다른 기기에서 링크를 열면 찾을 수 없다.
-      showToast('이 브라우저에서는 퍼즐을 찾을 수 없어 연습용 퍼즐을 열었어요.');
+  const openSharedPuzzle = async () => {
+    let puzzle: PuzzleRecord | null = null;
+    try {
+      puzzle = sharedPuzzleId ? await getPuzzle(sharedPuzzleId) : null;
+      if (!puzzle) {
+        // 보낸 사람이 탈퇴했거나, 서버에 저장하기 전 버전에서 만든 링크
+        showToast('퍼즐을 찾을 수 없어 연습용 퍼즐을 열었어요.');
+      }
+    } catch {
+      showToast('퍼즐을 불러오지 못해 연습용 퍼즐을 열었어요. 인터넷 연결을 확인해주세요.');
     }
     openSolve(puzzle);
   };
@@ -451,16 +531,17 @@ export default function App() {
                 screenScale={scale}
                 onBack={goBack}
                 onChangePhoto={() => setScreen('aiDecorate')}
-                onComplete={(sourceUri, gridSize) => {
-                  const puzzle = savePuzzle({
-                    id: draftPuzzleId,
-                    sourceUri,
-                    gridSize,
-                    sender: currentAccount,
-                    recipientSlug: draftRecipientSlug,
-                  });
-                  if (!puzzle) {
-                    showToast('저장 공간이 부족해 퍼즐을 저장하지 못했어요.');
+                onComplete={async (sourceUri, gridSize) => {
+                  let puzzle: PuzzleRecord;
+                  try {
+                    puzzle = await savePuzzle({
+                      id: draftPuzzleId,
+                      sourceUri,
+                      gridSize,
+                      recipientSlug: draftRecipientSlug,
+                    });
+                  } catch {
+                    showToast('퍼즐을 저장하지 못했어요. 인터넷 연결을 확인해주세요.');
                     return;
                   }
                   setDraftPuzzleId(puzzle.id);
@@ -498,8 +579,9 @@ export default function App() {
                 onBack={goBack}
                 onComplete={() => {
                   if (currentAccount && solveTarget.puzzleId) {
-                    markPuzzleSolved(currentAccount.email, solveTarget.puzzleId);
-                    refreshLibrary();
+                    markPuzzleSolved(solveTarget.puzzleId)
+                      .then(refreshLibrary)
+                      .catch(() => showToast('다 맞춘 퍼즐을 퍼즐함에 담지 못했어요.'));
                   }
                   setScreen('solveComplete');
                 }}
@@ -871,7 +953,7 @@ function AuthScreen({
   mode: 'login' | 'signup';
   onBack: () => void;
   onSwitchMode: () => void;
-  onSubmit: (credentials: AuthCredentials) => string | null;
+  onSubmit: (credentials: AuthCredentials) => Promise<string | null>;
 }) {
   const isSignup = mode === 'signup';
   const [name, setName] = useState('');
@@ -879,7 +961,9 @@ function AuthScreen({
   const [password, setPassword] = useState('');
   const [passwordConfirm, setPasswordConfirm] = useState('');
   const [authError, setAuthError] = useState('');
-  const canSubmit = email.trim().length > 0 && password.length > 0 && (!isSignup || (name.trim().length > 0 && passwordConfirm.length > 0));
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const canSubmit =
+    !isSubmitting && email.trim().length > 0 && password.length > 0 && (!isSignup || (name.trim().length > 0 && passwordConfirm.length > 0));
 
   return (
     <View style={styles.fill}>
@@ -918,9 +1002,12 @@ function AuthScreen({
 
       <Pressable
         disabled={!canSubmit}
-        onPress={() => {
-          const error = onSubmit({ mode, name, email, password, passwordConfirm });
+        onPress={async () => {
+          setIsSubmitting(true);
+          const error = await onSubmit({ mode, name, email, password, passwordConfirm });
+          // 성공하면 다른 화면으로 넘어가 이 화면은 사라진다.
           setAuthError(error ?? '');
+          setIsSubmitting(false);
         }}
         style={({ pressed }) => [
           styles.authPrimaryButton,
@@ -928,7 +1015,7 @@ function AuthScreen({
           pressed && canSubmit && styles.pressed,
         ]}
       >
-        <Text style={styles.primaryText}>{isSignup ? '회원가입하기' : '로그인하기'}</Text>
+        <Text style={styles.primaryText}>{isSubmitting ? '잠시만요…' : isSignup ? '회원가입하기' : '로그인하기'}</Text>
       </Pressable>
 
       <Pressable onPress={onSwitchMode} style={({ pressed }) => [styles.authSwitchButton, pressed && styles.pressed]}>
@@ -1640,8 +1727,9 @@ function PuzzleDecorateScreen({
   screenScale: number;
   onBack: () => void;
   onChangePhoto: () => void;
-  onComplete: (puzzleSourceUri: string, gridSize: GridSize) => void;
+  onComplete: (puzzleSourceUri: string, gridSize: GridSize) => Promise<void>;
 }) {
+  const [isCompleting, setIsCompleting] = useState(false);
   const [tool, setTool] = useState<'draw' | 'text'>('draw');
   const [gridSize, setGridSize] = useState<GridSize>(3);
   const [puzzleUri, setPuzzleUri] = useState(photoUri);
@@ -1856,13 +1944,20 @@ function PuzzleDecorateScreen({
       </Pressable>
 
       <Pressable
+        disabled={isCompleting}
         onPress={async () => {
-          const puzzleSourceUri = await createPuzzleArtworkImage(photoUri, strokes, textStickers);
-          onComplete(puzzleSourceUri, gridSize);
+          // 이미지를 서버에 올리는 동안 다시 누르면 퍼즐이 두 개 만들어지므로 막는다.
+          setIsCompleting(true);
+          try {
+            const puzzleSourceUri = await createPuzzleArtworkImage(photoUri, strokes, textStickers);
+            await onComplete(puzzleSourceUri, gridSize);
+          } finally {
+            setIsCompleting(false);
+          }
         }}
-        style={({ pressed }) => [styles.completeButton, pressed && styles.pressed]}
+        style={({ pressed }) => [styles.completeButton, isCompleting && styles.disabledButton, pressed && styles.pressed]}
       >
-        <Text style={styles.primaryText}>퍼즐 완성</Text>
+        <Text style={styles.primaryText}>{isCompleting ? '저장하는 중…' : '퍼즐 완성'}</Text>
       </Pressable>
     </View>
   );
