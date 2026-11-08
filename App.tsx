@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   GestureResponderEvent,
   Image,
@@ -181,6 +181,7 @@ export default function App() {
   const { width, height } = useWindowDimensions();
   const [viewportSize, setViewportSize] = useState({ width, height });
   const scale = getResponsiveScale(viewportSize.width, viewportSize.height);
+  const sideBleed = getSideBleed(viewportSize.width, scale);
   const screenViewportRef = useRef<View>(null);
   // 디자인 좌표 (0,0)이 지금 화면 어디에 있는지. 세로로 스크롤된 만큼도 반영돼야 퍼즐 조각을 끌어 놓을 자리가 맞는다.
   const getScreenOrigin = useCallback(() => {
@@ -263,6 +264,11 @@ export default function App() {
     const { width: nextWidth, height: nextHeight } = event.nativeEvent.layout;
     setViewportSize((current) => {
       if (Math.abs(current.width - nextWidth) < 0.5 && Math.abs(current.height - nextHeight) < 0.5) {
+        return current;
+      }
+      // 안드로이드 카톡처럼 키보드가 올라오면 세로만 줄어드는 브라우저가 있다.
+      // 그때마다 화면 전체가 작아지지 않도록, 글자를 입력하는 중에 세로만 줄어든 건 무시한다.
+      if (Math.abs(current.width - nextWidth) < 0.5 && nextHeight < current.height && isTextInputFocused()) {
         return current;
       }
       return { width: nextWidth, height: nextHeight };
@@ -445,8 +451,20 @@ export default function App() {
     <SafeAreaView style={styles.root} onLayout={handleRootLayout}>
       <StatusBar style="dark" backgroundColor="#fff" />
       <ScrollView style={styles.rootScroll} contentContainerStyle={styles.rootScrollContent} showsVerticalScrollIndicator={false}>
-        <View ref={screenViewportRef} style={[styles.screenViewport, { width: DESIGN_WIDTH * scale, height: DESIGN_HEIGHT * scale }]}>
-          <View style={[styles.screen, { transform: [{ scale }], transformOrigin: 'top left' }]}>
+        {/* 바깥 틀은 폰 가로 전체, 안쪽 틀은 디자인(390) 자리. 양옆 여백은 화면 배경색으로 채운다. */}
+        <View
+          style={[
+            styles.screenViewport,
+            {
+              width: (DESIGN_WIDTH + sideBleed * 2) * scale,
+              height: DESIGN_HEIGHT * scale,
+              backgroundColor: screen === 'received' ? SHARED_LINK_BACKGROUND : designSystem.color.background,
+            },
+          ]}
+        >
+          <View ref={screenViewportRef} style={[styles.screenFrame, { left: sideBleed * scale, width: DESIGN_WIDTH * scale, height: DESIGN_HEIGHT * scale }]}>
+          <ScreenBleedContext.Provider value={sideBleed}>
+          <View style={[styles.screen, sideBleed > 0 && styles.screenBleed, { transform: [{ scale }], transformOrigin: 'top left' }]}>
             {screen === 'splash' && (
               <SplashScreen
                 onStart={() => setScreen('card')}
@@ -621,6 +639,8 @@ export default function App() {
               />
             )}
           </View>
+          </ScreenBleedContext.Provider>
+          </View>
         </View>
       </ScrollView>
       <Toast />
@@ -747,6 +767,7 @@ function SplashScreen({ onStart, onLogin }: { onStart: () => void; onLogin: () =
       <View style={styles.splashHeroPuzzleWrap}>
         <Image source={splashYellowPuzzleAsset} style={styles.splashHeroPuzzle} resizeMode="cover" />
       </View>
+      <SplashArmExtension />
       <Image source={splashBlackArmAsset} style={styles.splashArm} resizeMode="cover" />
 
       <View style={styles.splashCopyBlock}>
@@ -775,6 +796,7 @@ function ReceivedSplashScreen({ onCheckPuzzle }: { onCheckPuzzle: () => void }) 
       <View style={styles.splashHeroPuzzleWrap}>
         <Image source={splashYellowPuzzleAsset} style={styles.splashHeroPuzzle} resizeMode="cover" />
       </View>
+      <SplashArmExtension />
       <Image source={splashBlackArmAsset} style={styles.splashArm} resizeMode="cover" />
 
       <View style={styles.splashCopyBlock}>
@@ -834,6 +856,7 @@ function ReceivedLinkScreen({
   onCreatePuzzle: () => void;
   onOpenPuzzle: (puzzle: ReceivedPuzzle) => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   const [selectedPublicPuzzle, setSelectedPublicPuzzle] = useState<ReceivedPuzzle | null>(null);
   const isPrivatePublicPuzzles = useMemo(() => {
     const webLocation = (globalThis as unknown as { location?: { search?: string } }).location;
@@ -852,10 +875,11 @@ function ReceivedLinkScreen({
   }, [publicPuzzles]);
 
   return (
-    <View style={styles.sharedLinkRoot}>
+    <View style={[styles.sharedLinkRoot, bleed > 0 && styles.overflowVisible]}>
       <Image source={mainLogoAsset} style={styles.sharedLinkLogo} resizeMode="contain" />
 
-      <View style={styles.sharedLinkBanner}>
+      <BleedSides left={-6} width={403} style={styles.sharedLinkBanner} />
+      <View style={[styles.sharedLinkBanner, bleed > 0 && styles.overflowVisible]}>
         <Text style={styles.sharedLinkBannerTitle}>{recipientName}님에게{'\n'}퍼즐을 만들어주세요!</Text>
         <Text style={styles.sharedLinkBannerDescription}>사진과 하고 싶은 말을 담아{'\n'}특별한 퍼즐로 보내보세요.</Text>
         <Pressable onPress={onCreatePuzzle} style={({ pressed }) => [styles.sharedLinkBannerCta, pressed && styles.pressed]}>
@@ -912,8 +936,10 @@ function SharedPublicPuzzleModal({
   onLater: () => void;
   onStart: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   return (
-    <View style={styles.sharedPublicModalOverlay}>
+    <View style={[styles.sharedPublicModalOverlay, bleed > 0 && getBleedFrame(bleed, -18, 439)]}>
+      <BleedContent width={439}>
       <View style={styles.sharedPublicModalCard}>
         <Text style={styles.sharedPublicModalTitle}>{formatMonthDay(puzzle.solvedAt ?? puzzle.receivedAt)} 퍼즐</Text>
         <Pressable onPress={onClose} style={({ pressed }) => [styles.sharedPublicModalClose, pressed && styles.pressed]}>
@@ -927,6 +953,7 @@ function SharedPublicPuzzleModal({
           <Text style={styles.sharedPublicModalButtonText}>저도 풀어볼래요!</Text>
         </Pressable>
       </View>
+      </BleedContent>
     </View>
   );
 }
@@ -1192,6 +1219,7 @@ function HomeScreen({
   onOpenPuzzleBox: () => void;
   onOpenProfile: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   const weekAgo = Date.now() - WEEK_MS;
   let giftIndex = 0;
   // 피그마처럼 안 푼 퍼즐은 선물 상자, 이미 푼 퍼즐은 사진으로 보여준다.
@@ -1229,7 +1257,8 @@ function HomeScreen({
       <Image source={mainMenuTextRightIconAsset} style={styles.homeMenuIcon} resizeMode="contain" />
       <Image source={mainNotificationBellIconAsset} style={styles.homeBellIcon} resizeMode="contain" />
 
-      <Pressable onPress={shareProfileLink} style={({ pressed }) => [styles.homeBanner, pressed && styles.pressed]}>
+      <BleedSides left={-6} width={403} style={styles.homeBanner} />
+      <Pressable onPress={shareProfileLink} style={({ pressed }) => [styles.homeBanner, bleed > 0 && styles.overflowVisible, pressed && styles.pressed]}>
         <Text style={styles.homeBannerTitle}>친구에게 퍼즐을{'\n'}받아볼까요?</Text>
         <Text style={styles.homeBannerDescription}>
           내 링크를 공유하면{'\n'}친구가 나에게 퍼즐을 보내줄 수 있어요.
@@ -1246,8 +1275,8 @@ function HomeScreen({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        style={styles.homeReceivedRow}
-        contentContainerStyle={styles.homePuzzleRowContent}
+        style={[styles.homeReceivedRow, bleed > 0 && getBleedRow(bleed)]}
+        contentContainerStyle={[styles.homePuzzleRowContent, bleed > 0 && { paddingHorizontal: 20 + bleed }]}
       >
         {receivedTiles.map((item) => (
           <HomeTile key={item.id} item={item} />
@@ -1260,8 +1289,8 @@ function HomeScreen({
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          style={styles.homeSentRow}
-          contentContainerStyle={styles.homePuzzleRowContent}
+          style={[styles.homeSentRow, bleed > 0 && getBleedRow(bleed)]}
+          contentContainerStyle={[styles.homePuzzleRowContent, bleed > 0 && { paddingHorizontal: 20 + bleed }]}
         >
           {sentTiles.map((item) => (
             <HomeTile key={item.id} item={item} />
@@ -1370,6 +1399,7 @@ function ProfileScreen({
 
   return (
     <View style={styles.profileRoot}>
+      <BleedSides left={-6} width={402} style={styles.profileTopBar} />
       <View style={styles.profileTopBar}>
         <Pressable onPress={onBack} style={({ pressed }) => [styles.profileBackButton, pressed && styles.pressed]}>
           <Text style={styles.profileBackIcon}>‹</Text>
@@ -1377,6 +1407,7 @@ function ProfileScreen({
         <Text style={styles.profileTopTitle}>내 정보</Text>
       </View>
 
+      <BleedSides left={0} width={404} style={styles.profileSummary} />
       <View style={styles.profileSummary}>
         <View style={styles.profileAvatarCircle}>
           <Image source={profilePuzzleAvatarAsset} style={styles.profileAvatarImage} resizeMode="cover" />
@@ -1425,9 +1456,12 @@ function ProfileScreen({
 
 function ProfileSectionHeader({ title, top }: { title: string; top: number }) {
   return (
-    <View style={[styles.profileSectionHeader, { top }]}>
-      <Text style={styles.profileSectionHeaderText}>{title}</Text>
-    </View>
+    <>
+      <BleedSides left={0} width={402} style={[styles.profileSectionHeader, { top }]} />
+      <View style={[styles.profileSectionHeader, { top }]}>
+        <Text style={styles.profileSectionHeaderText}>{title}</Text>
+      </View>
+    </>
   );
 }
 
@@ -1476,6 +1510,7 @@ function PuzzleBoxScreen({
   onOpenReceivedPuzzle: (puzzle: ReceivedPuzzle) => void;
   onOpenSentPuzzle: (puzzle: PuzzleRecord) => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   const [activePuzzleBoxTab, setActivePuzzleBoxTab] = useState<'received' | 'sent'>(initialTab);
   const unsolvedTiles: HomePuzzleTileItem[] = [
     createPracticeTileItem(onOpenPractice),
@@ -1497,6 +1532,7 @@ function PuzzleBoxScreen({
 
   return (
     <View style={styles.puzzleBoxRoot}>
+      <BleedSides left={-6} width={402} style={styles.puzzleBoxTopBar} />
       <View style={styles.puzzleBoxTopBar}>
         <Pressable onPress={onBack} style={({ pressed }) => [styles.puzzleBoxBackButton, pressed && styles.pressed]}>
           <Text style={styles.puzzleBoxBackIcon}>‹</Text>
@@ -1504,6 +1540,7 @@ function PuzzleBoxScreen({
         <Text style={styles.puzzleBoxTitle}>퍼즐함</Text>
       </View>
 
+      <BleedSides left={-6} width={402} style={styles.puzzleBoxTabBar} />
       <View style={styles.puzzleBoxTabBar}>
         <Pressable onPress={() => setActivePuzzleBoxTab('received')} style={({ pressed }) => [styles.puzzleBoxTabButton, styles.puzzleBoxTabButtonReceived, pressed && styles.pressed]}>
           <Text style={[styles.puzzleBoxTabText, isReceivedTab ? styles.puzzleBoxTabTextActive : styles.puzzleBoxTabTextInactive]}>받은 퍼즐</Text>
@@ -1518,7 +1555,7 @@ function PuzzleBoxScreen({
         <>
           <Text style={styles.puzzleBoxUnsolvedTitle}>아직 안 푼 퍼즐</Text>
           <View style={styles.puzzleBoxUnsolvedHighlight} />
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.puzzleBoxUnsolvedRow} contentContainerStyle={styles.puzzleBoxRowContent}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.puzzleBoxUnsolvedRow, bleed > 0 && getBleedRow(bleed)]} contentContainerStyle={[styles.puzzleBoxRowContent, bleed > 0 && { paddingLeft: 25 + bleed, paddingRight: 24 + bleed }]}>
             {unsolvedTiles.map((item) => (
               <HomePuzzleTile key={item.id} item={item} />
             ))}
@@ -1526,7 +1563,7 @@ function PuzzleBoxScreen({
 
           <Text style={styles.puzzleBoxSolvedTitle}>최근 푼 퍼즐</Text>
           {solvedPuzzles.length > 0 ? (
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.puzzleBoxSolvedRow} contentContainerStyle={styles.puzzleBoxSolvedRowContent}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.puzzleBoxSolvedRow, bleed > 0 && getBleedRow(bleed)]} contentContainerStyle={[styles.puzzleBoxSolvedRowContent, bleed > 0 && { paddingHorizontal: 26 + bleed }]}>
               {solvedPuzzles.map((puzzle) => (
                 <View key={puzzle.id} style={styles.puzzleBoxSolvedCard}>
                   <Image source={{ uri: puzzle.sourceUri }} style={styles.puzzleBoxSolvedImage} resizeMode="cover" />
@@ -1574,8 +1611,10 @@ function ConfirmDialog({
   onCancel: () => void;
   onConfirm: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   return (
-    <View style={styles.receivedNoticeOverlay}>
+    <View style={[styles.receivedNoticeOverlay, bleed > 0 && getBleedRow(bleed)]}>
+      <BleedContent width={DESIGN_WIDTH}>
       <View style={styles.confirmCard}>
         <Text style={styles.confirmTitle}>{title}</Text>
         <Text style={styles.confirmMessage}>{message}</Text>
@@ -1586,6 +1625,7 @@ function ConfirmDialog({
           <Text style={styles.receivedNoticeStartText}>{confirmLabel}</Text>
         </Pressable>
       </View>
+      </BleedContent>
     </View>
   );
 }
@@ -1599,8 +1639,10 @@ function ReceivedPuzzleNotice({
   onLater: () => void;
   onStart: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   return (
-    <View style={styles.receivedNoticeOverlay}>
+    <View style={[styles.receivedNoticeOverlay, bleed > 0 && getBleedRow(bleed)]}>
+      <BleedContent width={DESIGN_WIDTH}>
       <View style={styles.receivedNoticeCard}>
         <Pressable onPress={onClose} style={({ pressed }) => [styles.receivedNoticeClose, pressed && styles.pressed]}>
           <Image source={mainModalCloseIconAsset} style={styles.receivedNoticeCloseIcon} resizeMode="contain" />
@@ -1618,6 +1660,7 @@ function ReceivedPuzzleNotice({
           <Text style={styles.receivedNoticeStartText}>네! 지금 할래요</Text>
         </Pressable>
       </View>
+      </BleedContent>
     </View>
   );
 }
@@ -1633,12 +1676,13 @@ function HomeTabBar({
   onPuzzleBox: () => void;
   onProfile: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   const isHomeActive = activeTab === 'home';
   const isPuzzleBoxActive = activeTab === 'puzzleBox';
   const isProfileActive = activeTab === 'profile';
 
   return (
-    <View style={styles.homeTabBar}>
+    <View style={[styles.homeTabBar, bleed > 0 && { ...getBleedFrame(bleed, -1, 405), paddingHorizontal: 30 + bleed }]}>
       <Pressable accessibilityRole="button" onPress={onHome} onPressIn={onHome} style={({ pressed }) => [styles.homeTabButton, pressed && styles.pressed]}>
         <Image source={mainTabHomeFilledIconAsset} style={[styles.homeTabHomeIcon, !isHomeActive && styles.homeTabIconInactive]} resizeMode="contain" />
         <Text style={[styles.homeTabLabel, isHomeActive ? styles.homeTabLabelActive : styles.homeTabLabelInactive]}>홈</Text>
@@ -1653,7 +1697,7 @@ function HomeTabBar({
         <Image source={mainTabPersonFilledIconAsset} style={[styles.homeTabProfileIcon, styles.homeTabProfileIconFlow, !isProfileActive && styles.homeTabIconInactive]} resizeMode="contain" />
         <Text style={[styles.homeTabLabel, isProfileActive ? styles.homeTabLabelActive : styles.homeTabLabelInactive]}>내 정보</Text>
       </Pressable>
-      <View style={styles.homeTabIndicator} />
+      <View style={[styles.homeTabIndicator, bleed > 0 && { left: 120 + bleed }]} />
     </View>
   );
 }
@@ -1673,6 +1717,7 @@ function PhotoSelectScreen({
   onSelectPhoto: (index: number) => void;
   onMakePuzzle: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   const [activePhotoTab, setActivePhotoTab] = useState<'recent' | 'favorites'>('recent');
   const favoritePhotoUris = EMPTY_PHOTO_URIS;
   const visiblePhotoUris = activePhotoTab === 'recent' ? photoUris : favoritePhotoUris;
@@ -1682,6 +1727,7 @@ function PhotoSelectScreen({
   return (
     <View style={styles.fill}>
       <TopBar title="사진 선택" onBack={onBack} />
+      <BleedSides left={0} width={DESIGN_WIDTH} style={styles.tabBar} />
       <View style={styles.tabBar}>
         <Pressable onPress={() => setActivePhotoTab('recent')} style={[styles.photoTab, styles.recentPhotoTab]}>
           <Text style={[styles.photoTabText, activePhotoTab === 'recent' ? styles.activePhotoTabText : styles.inactivePhotoTabText]}>최근 항목</Text>
@@ -1725,7 +1771,8 @@ function PhotoSelectScreen({
         ) : null}
       </View>
 
-      <View style={styles.bottomPanel}>
+      <View style={[styles.bottomPanel, bleed > 0 && getBleedFrame(bleed, 0, 403)]}>
+        <BleedContent width={403}>
         <Pressable
           disabled={!hasSelection}
           onPress={hasSelection ? onMakePuzzle : onPickPhoto}
@@ -1734,6 +1781,7 @@ function PhotoSelectScreen({
           <Text style={styles.primaryText}>퍼즐 제작하기</Text>
         </Pressable>
         <Text style={styles.bottomHelperText}>선택한 사진은 퍼즐을 만드는 데만 사용돼요</Text>
+        </BleedContent>
       </View>
     </View>
   );
@@ -2108,6 +2156,7 @@ function PuzzleSolveScreen({
   onBack: () => void;
   onComplete: () => void;
 }) {
+  const bleed = useContext(ScreenBleedContext);
   const totalPieces = gridSize * gridSize;
   const boardSize = 302;
   const slotSize = boardSize / gridSize;
@@ -2298,7 +2347,8 @@ function PuzzleSolveScreen({
         </Pressable>
       </View>
 
-      <View style={styles.solveBottomSheet}>
+      <View style={[styles.solveBottomSheet, bleed > 0 && getBleedFrame(bleed, -7, 403)]}>
+        <BleedContent width={403}>
         <Pressable
           disabled={placedCount < totalPieces}
           onPress={onComplete}
@@ -2307,6 +2357,7 @@ function PuzzleSolveScreen({
           <Text style={styles.primaryText}>퍼즐 완성하기</Text>
         </Pressable>
         <Text style={styles.solveHelperText}>조각을 선택해서 퍼즐판에 놓아보세요!</Text>
+        </BleedContent>
       </View>
       {draggingPiece && pieceUris[draggingPiece.pieceIndex] ? (
         <Image
@@ -2489,12 +2540,15 @@ function TextPanelEditor({
 
 function TopBar({ title, onBack, withBorder = false }: { title: string; onBack: () => void; withBorder?: boolean }) {
   return (
-    <View style={[styles.topBar, withBorder && styles.topBarBorder]}>
-      <Pressable onPress={onBack} hitSlop={12} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
-        <Text style={styles.backIcon}>‹</Text>
-      </Pressable>
-      <Text style={styles.topBarTitle}>{title}</Text>
-    </View>
+    <>
+      <BleedSides left={0} width={DESIGN_WIDTH} style={[styles.topBar, withBorder && styles.topBarBorder]} />
+      <View style={[styles.topBar, withBorder && styles.topBarBorder]}>
+        <Pressable onPress={onBack} hitSlop={12} style={({ pressed }) => [styles.backButton, pressed && styles.pressed]}>
+          <Text style={styles.backIcon}>‹</Text>
+        </Pressable>
+        <Text style={styles.topBarTitle}>{title}</Text>
+      </View>
+    </>
   );
 }
 
@@ -2551,24 +2605,102 @@ const designSystem = {
 
 const PHONE_MAX_WIDTH = 500;
 
+// 친구 프로필 링크 화면의 배경. 양옆 여백도 같은 색으로 채운다.
+const SHARED_LINK_BACKGROUND = '#fbfbfb';
+
 // 화면이 세로로 스크롤되는 폰에서, 조각 끌기·그림 그리기·굵기 조절을 할 때 페이지가 같이 움직이지 않게 한다. (웹 전용 스타일)
 const NO_TOUCH_SCROLL = { touchAction: 'none' } as unknown as ViewStyle;
+
+// 폰에서 세로가 모자랄 때 화면을 줄이는 한계 (가로에 꽉 맞춘 크기 대비). 이보다 더 모자라면 남는 만큼만 스크롤한다.
+const PHONE_MIN_FIT = 0.75;
 
 function getResponsiveScale(width: number, height: number) {
   const widthScale = width / designSystem.size.screenWidth;
   const heightScale = height / designSystem.size.screenHeight;
 
-  // 폰에서는 가로를 꽉 채우고 모자란 세로는 스크롤로 넘긴다.
-  // (높이에 맞추면 브라우저 주소창 높이만큼 화면 전체가 줄어들어 양옆에 여백이 생긴다)
-  // 디자인(390)보다 조금 넓은 폰(아이폰 17 402, 갤럭시 412, 프로맥스 440)도 폰으로 본다.
-  // 카톡 안 브라우저처럼 위아래 막대가 화면을 줄이는 곳에서 특히 양옆이 크게 비었다.
-  // 태블릿·PC처럼 넓은 화면에서만 기기 한 대가 통째로 보이도록 높이에 맞춘다.
-  return width <= PHONE_MAX_WIDTH ? widthScale : Math.min(widthScale, heightScale);
+  // 태블릿·PC처럼 넓은 화면에서는 기기 한 대가 통째로 보이도록 높이에 맞춘다.
+  if (width > PHONE_MAX_WIDTH) {
+    return Math.min(widthScale, heightScale);
+  }
+
+  // 폰(디자인 390보다 조금 넓은 아이폰 17 402, 갤럭시 412, 프로맥스 440 포함)에서는 위아래가 한 화면에 다 보이게 맞춘다.
+  // 카톡 안 브라우저처럼 위아래 막대가 화면을 줄이는 곳에서는 조금 작아지고, 남는 양옆은 ScreenBleedContext로 채운다.
+  return Math.min(widthScale, Math.max(heightScale, widthScale * PHONE_MIN_FIT));
+}
+
+// 화면을 세로에 맞춰 줄이면 디자인(390) 양옆에 남는 폭 (디자인 단위). 넓은 화면(PC)에서는 0.
+// 위 막대·배너·아래 시트·어두운 덮개처럼 원래 가로를 꽉 채우던 요소는 이만큼 양옆으로 더 늘린다.
+const ScreenBleedContext = createContext(0);
+
+function getSideBleed(width: number, scale: number) {
+  if (width > PHONE_MAX_WIDTH) {
+    return 0;
+  }
+  return Math.max(0, (width / scale - DESIGN_WIDTH) / 2);
+}
+
+function isTextInputFocused() {
+  const activeElement = (globalThis as unknown as { document?: { activeElement?: { tagName?: string } | null } }).document?.activeElement;
+  return activeElement?.tagName === 'INPUT' || activeElement?.tagName === 'TEXTAREA';
+}
+
+// 원래 left~left+width를 차지하던 요소를 양옆 여백까지 늘린 위치.
+function getBleedFrame(bleed: number, left: number, width: number): ViewStyle {
+  return { left: left - bleed, width: width + bleed * 2 };
+}
+
+// 가로로 넘기는 퍼즐 목록은 화면 끝까지 넓히고, 늘린 만큼 안쪽 여백을 더해 첫 카드 자리는 그대로 둔다.
+function getBleedRow(bleed: number): ViewStyle {
+  return { left: -bleed, right: -bleed };
+}
+
+// 늘린 요소 안에서, 자식들은 원래 자리(디자인 좌표)에 그대로 두기 위한 안쪽 틀.
+function getBleedContent(bleed: number, width: number): ViewStyle {
+  return { position: 'absolute', left: bleed, top: 0, bottom: 0, width };
+}
+
+// 늘린 시트 안에서 자식들을 원래 자리에 두는 틀. 여백이 없으면 감싸지 않는다.
+function BleedContent({ width, children }: { width: number; children: ReactNode }) {
+  const bleed = useContext(ScreenBleedContext);
+  if (bleed <= 0) {
+    return <>{children}</>;
+  }
+  return <View style={getBleedContent(bleed, width)}>{children}</View>;
+}
+
+// 첫 화면의 검은 팔은 왼쪽 화면 끝에서 뻗어 나온 모양이다. 왼쪽에 여백이 생기면 그만큼 팔을 이어 그린다.
+// 팔 이미지 왼쪽 끝의 굵기·기울기(오른쪽으로 갈수록 0.2씩 올라감)에 맞춘 평행사변형.
+function SplashArmExtension() {
+  const bleed = useContext(ScreenBleedContext);
+  if (bleed <= 0) {
+    return null;
+  }
+  const overlap = 6;
+  const width = bleed + 4 + overlap;
+  return <View pointerEvents="none" style={[styles.splashArmExtension, { left: SPLASH_ARM_LEFT + overlap - width, width }]} />;
+}
+
+// 요소 자체는 그대로 두고, 양옆 여백 부분만 같은 배경·밑줄로 채운다. 불투명한 요소에만 쓴다.
+// 경계에 머리카락 같은 틈이 보이지 않도록 요소 밑으로 1만큼 겹쳐 그린다. (반투명 덮개는 겹친 곳이 진해지므로 getBleedFrame으로 늘린다)
+function BleedSides({ left, width, style }: { left: number; width: number; style: StyleProp<ViewStyle> }) {
+  const bleed = useContext(ScreenBleedContext);
+  if (bleed <= 0) {
+    return null;
+  }
+  const sideWidth = bleed + 2;
+  const overlap = 1;
+  return (
+    <>
+      <View pointerEvents="none" style={[style, { position: 'absolute', left: left - sideWidth, width: sideWidth + overlap }]} />
+      <View pointerEvents="none" style={[style, { position: 'absolute', left: left + width - overlap, width: sideWidth + overlap }]} />
+    </>
+  );
 }
 
 // 피그마 화면(402x874)은 맨 위에 폰이 직접 그리는 상태바 자리를 비워두고 있다.
 // 앱 캔버스는 그 아래에서 시작하므로 그 높이만큼 화면을 위로 끌어올린다.
 const STATUS_STRIP = 49;
+const SPLASH_ARM_LEFT = -2;
 const FRAME_HEIGHT = DESIGN_HEIGHT + STATUS_STRIP;
 
 const styles = StyleSheet.create({
@@ -2612,11 +2744,22 @@ const styles = StyleSheet.create({
   screenViewport: {
     overflow: 'hidden',
   },
+  screenFrame: {
+    position: 'absolute',
+    top: 0,
+  },
   screen: {
     width: designSystem.size.screenWidth,
     height: designSystem.size.screenHeight,
     backgroundColor: designSystem.color.background,
     overflow: 'hidden',
+  },
+  // 양옆 여백까지 늘린 요소가 디자인 틀(390) 밖으로 그려지게 한다. 폰 가장자리에서는 screenViewport가 자른다.
+  screenBleed: {
+    overflow: 'visible',
+  },
+  overflowVisible: {
+    overflow: 'visible',
   },
   fill: {
     flex: 1,
@@ -2654,10 +2797,18 @@ const styles = StyleSheet.create({
   },
   splashArm: {
     position: 'absolute',
-    left: -2,
+    left: SPLASH_ARM_LEFT,
     top: 235,
     width: 164,
     height: 129,
+  },
+  splashArmExtension: {
+    position: 'absolute',
+    top: 294.6,
+    height: 59.6,
+    backgroundColor: '#171716',
+    transform: [{ skewY: '-11.3deg' }],
+    transformOrigin: 'right center',
   },
   splashCopyBlock: {
     position: 'absolute',
@@ -2922,7 +3073,7 @@ const styles = StyleSheet.create({
     right: 0,
     top: -STATUS_STRIP,
     height: FRAME_HEIGHT,
-    backgroundColor: '#fbfbfb',
+    backgroundColor: SHARED_LINK_BACKGROUND,
     overflow: 'hidden',
   },
   sharedLinkLogo: {
